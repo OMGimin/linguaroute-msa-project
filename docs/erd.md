@@ -28,8 +28,9 @@ flowchart LR
     COURSE["Course<br/>course-service"] --> LESSON["Lesson<br/>course-service"]
     COURSE -. "논리 참조" .-> ENROLLMENT
     ENROLLMENT --> PROGRESS["Lesson Progress<br/>enrollment-service"]
-    USER -. "권한·수강 이력 조회" .-> RECOMMEND_ENGINE["Recommendation Engine<br/>recommend-service"]
-    COURSE -. "ACTIVE 강의 조회" .-> RECOMMEND_ENGINE
+    USER -. "논리 참조·권한 조회" .-> RECOMMENDATION["Recommendation<br/>recommend-service"]
+    COURSE -. "논리 참조·ACTIVE 후보 조회" .-> RECOMMENDATION_ITEM["Recommendation Item<br/>recommend-service"]
+    RECOMMENDATION --> RECOMMENDATION_ITEM
 ```
 
 점선은 서로 다른 서비스 소유 영역 사이의 논리 참조이며 실제 데이터베이스 외래키를 생성하지 않습니다.
@@ -214,20 +215,58 @@ erDiagram
 
 ---
 
-## 6. recommend-service 데이터 처리
+## 6. recommend-service ERD
 
-현재 연동 골격의 `recommend-service`는 물리 테이블을 만들지 않습니다. 추천 요청과 결과는 요청 처리 중 메모리에서 생성해 즉시 응답하며 `init-db/01_init.sql`에도 추천 테이블이 없습니다. 추천 시스템은 김지민 팀원이 연동할 예정이며, 영속화가 필요해질 경우 서비스 소유권과 보존 정책을 먼저 확정한 뒤 이 문서와 초기화 SQL을 함께 변경합니다.
+```mermaid
+erDiagram
+    RECOMMENDATION ||--o{ RECOMMENDATION_ITEM : contains
+
+    RECOMMENDATION {
+        bigint id PK
+        bigint user_id
+        bigint company_id
+        varchar language
+        varchar level
+        varchar job
+        varchar situation
+        text goal
+        varchar source
+        varchar status
+        datetime created_at
+    }
+
+    RECOMMENDATION_ITEM {
+        bigint id PK
+        bigint recommendation_id FK
+        bigint course_id
+        int rank
+        text reason
+        datetime created_at
+    }
+```
+
+### recommend-service 주요 제약조건
+
+| 테이블 | 제약조건 |
+| --- | --- |
+| `recommendations` | 요청 사용자·기업·언어·수준·직무·상황·목표와 최종 출처·상태 저장 |
+| `recommendation_items` | `(recommendation_id, course_id)` 유일, 같은 추천 안에서 강의 중복 방지 |
+| `recommendation_items.recommendation_id` | 같은 서비스 소유 FK, 추천 삭제 시 항목 `ON DELETE CASCADE` |
+| `user_id`, `company_id`, `course_id` | 다른 서비스 소유 ID이므로 실제 FK 없이 논리 참조로 저장 |
+| 추천 결과 | 최대 3개, `ACTIVE` 상태·요청 언어 일치·기존 수강 제외 후 저장 |
+
+`recommend-service`는 `recommendations`와 `recommendation_items`를 소유합니다. 두 테이블은 `init-db/01_init.sql`에 명시되어 있고 SQLAlchemy Entity와 동일한 컬럼·제약조건을 사용합니다. 응답의 `recommendationId`는 `recommendations.id`의 영속 기본키입니다.
 
 ```text
 직원 요청
-→ user-service 내부 API로 최신 역할·상태 확인
+→ user-service 내부 API로 최신 역할·소속·상태 확인
 → enrollment-service 내부 API로 기존 수강 강의 ID 조회
 → course-service 내부 API로 같은 언어의 ACTIVE 후보 조회
-→ 수준·상황 일치도로 정렬하고 추천 이유 생성
-→ RULE_BASED_FALLBACK 응답 반환
+→ OpenAI 또는 로컬 Provider가 후보 안에서 최대 3개와 이유 생성
+→ recommend-service가 후보 ID·중복·언어·상태 재검증
+→ 실패 시 규칙 기반 fallback으로 전환
+→ recommendations와 recommendation_items 저장 후 응답
 ```
-
-추천 응답의 `recommendationId`는 응답 추적용 실행 시각 기반 값이며 데이터베이스 기본키가 아닙니다. 향후 추천 이력 저장이 요구될 때만 서비스 소유 테이블과 보존 정책을 별도 설계합니다.
 
 ---
 
@@ -527,7 +566,7 @@ erDiagram
 }
 ```
 
-현재 `recommend-service`는 이 이벤트를 수신해 로그로 기록하며 추천 캐시나 DB를 갱신하지 않습니다. 추천 요청 시점마다 `course-service`와 `enrollment-service` 내부 조회 API에서 최신 기준 데이터를 가져옵니다.
+현재 `recommend-service`는 이 이벤트를 수신해 로그로 기록하며 기존 추천 이력을 갱신하지 않습니다. 추천 요청 시점마다 `course-service`와 `enrollment-service` 내부 조회 API에서 최신 기준 데이터를 가져오고 새 추천 요청·결과를 저장합니다.
 
 ### 11.7 구독 이벤트 처리 흐름
 
@@ -554,6 +593,7 @@ MVP에서는 미발행 Outbox 이벤트를 5초 간격으로 재시도하고 성
 | 초대코드 | 폐기 시 `REVOKED`, 만료 시 `EXPIRED` 사용 |
 | 수강 이력 | 학습 기록 보존을 위해 물리 삭제하지 않음 |
 | 결제 | 회계 및 감사 목적으로 삭제하지 않음 |
+| 추천 이력 | MVP에서는 삭제 API를 제공하지 않으며, 같은 서비스 안에서 추천을 삭제할 경우 항목은 cascade 삭제 |
 | 감사 로그 | 추후 구현 시 수정·삭제하지 않는 append-only 방식 사용 |
 
 ---
@@ -567,4 +607,4 @@ MVP에서는 미발행 Outbox 이벤트를 5초 간격으로 재시도하고 성
 | 서비스 경계 | 다른 서비스 소유 테이블 직접 조회·조인과 서비스 사이 외래키가 없는지 확인 |
 | 논리 참조 | 서비스 밖의 ID가 논리 참조로만 저장되는지 확인 |
 | 이벤트 전달 보장 | Outbox를 5초 간격으로 재시도하고 `processed_event`는 프로젝트 기간 동안 보관 |
-| 추천 데이터 | 현재 물리 테이블 없이 요청 시 계산하며 `recommendationId`는 영속 ID가 아님 |
+| 추천 데이터 | `recommendations`, `recommendation_items`가 초기 DDL·SQLAlchemy Entity와 일치하고 `recommendationId`가 영속 PK인지 확인 |

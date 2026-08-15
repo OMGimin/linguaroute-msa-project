@@ -14,14 +14,14 @@ test('화면의 한글 선택값을 추천 API enum 요청으로 변환한다', 
       level: '중급',
       job: '글로벌 세일즈',
       situation: '고객 미팅',
-      goal: '해외 고객에게 제품을 자연스럽게 설명하고 싶어요.'
+      goal: '제품 사양과 기술 용어를 해외 고객에게 자연스럽게 설명하고 싶어요.'
     }),
     {
       language: 'ENGLISH',
       level: 'INTERMEDIATE',
       job: 'GLOBAL_SALES',
       situation: 'CUSTOMER_MEETING',
-      goal: '해외 고객에게 제품을 자연스럽게 설명하고 싶어요.'
+      goal: '제품 사양과 기술 용어를 해외 고객에게 자연스럽게 설명하고 싶어요.'
     }
   )
 })

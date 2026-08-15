@@ -47,7 +47,7 @@
       <div class="logout-modal card" role="dialog" aria-modal="true" aria-labelledby="logout-title">
         <span class="logout-icon"><LogOut :size="22" /></span>
         <h2 id="logout-title">로그아웃하시겠어요?</h2>
-        <p>현재 기기에 저장된 Access Token을 삭제하고 로그인 화면으로 이동합니다.</p>
+        <p>현재 기기의 Access Token과 인증 세션을 정리하고 첫 화면으로 이동합니다.</p>
         <div><button class="button" @click="logoutModal = false">취소</button><button class="button primary" @click="confirmLogout">로그아웃</button></div>
       </div>
     </div>

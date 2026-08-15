@@ -1,4 +1,4 @@
-# 팀원 1 `user-service` 작업 계획
+# 팀원 1 `user-service` 구현 기록
 
 > 담당자: 임해안
 >
@@ -7,6 +7,8 @@
 > 작업 브랜치: `feature/user-company`
 >
 > 기준 문서: `docs/product-spec.md`, `docs/api-spec.md`, `docs/erd.md`, `docs/mvp-checklist.md`
+
+> 현재 상태: 기능 브랜치 구현과 `dev` 병합, 자동 테스트 및 Gateway 통합 검증 완료
 
 ## 1. 확정된 인증·데이터 경계
 
@@ -106,7 +108,7 @@ X-Internal-Api-Key: ${INTERNAL_API_KEY}
 - [x] 올바른 키이면 `userId`, `companyId`, `businessRole`, `status` 반환
 - [x] 키가 없거나 다르면 `403 INVALID_INTERNAL_API_KEY`
 - [x] 이 경로는 OAuth2 Scope에 의존하지 않음
-- [ ] Gateway 외부 라우트에 노출되지 않는지 통합 확인
+- [x] Gateway 외부 `/internal/**` 요청이 `404`로 차단되는지 통합 확인
 
 ## 5. 검증 현황
 
@@ -139,40 +141,28 @@ X-Internal-Api-Key: ${INTERNAL_API_KEY}
 
 수업 가이드의 `POST /api/users/login` 예시는 현재 제공 이미지와 다르며 Gateway에서 `401`을 반환한다. 실제 제공 Auth Server는 `authorization_code` grant를 지원하므로, 브라우저는 `/oauth2/authorize`와 `/login`을 거쳐 Authorization Code를 받고 user-service의 서버 측 코드 교환으로 JWT를 발급받는다. 실제 토큰으로 사용자·기업 보호 API `200`, 탈퇴 사용자 `403 USER_INACTIVE`를 확인했다.
 
-## 6. `dev` 병합 후 필수 주의사항
+## 6. `dev` 병합 후 운영 주의사항
 
-### 공용 초기 DDL 충돌
+### 공용 초기 DDL과 기존 볼륨
 
-- 최신 `origin/dev`를 병합한 상태에서 `course-service`의 `Course.Category` 참조 6건으로 `compileJava`가 실패한다.
-- 이 실패는 `feature/user-company` 변경이 아니라 현재 `dev`의 강의 Entity와 Controller·Service·Repository 계약 불일치이며 `feature/course-domain-fix`가 수정 중이다.
-- `feature/course-domain-fix`도 `init-db/01_init.sql`의 `courses` 정의를 변경한다.
-- 해당 브랜치와 `feature/user-company`의 병합 시뮬레이션에서 같은 파일의 충돌을 확인했다.
-- 충돌 해결 시 이 브랜치가 추가한 `companies`, 사용자 확장 컬럼, `email_verifications`, `terms`, `user_agreements`를 유지해야 한다.
-- 동시에 강의 담당 브랜치의 외국어 강의 컬럼 `language`, `situation`, `level`, `status`를 유지하고 기존 `category`, `price`, `instructor_id`, `enrollment_count` 정의는 제거해야 한다.
-
-### 기존 `users` 데이터 마이그레이션
-
-- 기존 데이터가 있는 DB에서 `ddl-auto=update`로 실행하면 MariaDB가 새 `business_role`의 첫 enum 값인 `COMPANY_ADMIN`을 모든 기존 사용자에게 자동 입력한다.
-- 실제 로컬 공유 DB의 기존 사용자 4건과 동일한 구조로 격리 검증하여 이 동작을 확인했다.
-- 기존 `INSTRUCTOR`만으로는 `PLATFORM_ADMIN`과 `COMPANY_ADMIN`을 구분할 수 없고, 기존 `STUDENT`에는 필수 `company_id`가 없으므로 자동 매핑하면 안 된다.
-- 통합 환경의 `user-service`를 재빌드하기 전에 다음 중 하나를 팀에서 합의해야 한다.
-  1. 개발 DB 볼륨을 초기화하고 새 DDL로 재생성한다.
-  2. 새 컬럼을 nullable로 추가하고 사용자별 `business_role`, `status`, `company_id`를 명시적으로 보정한 뒤 제약조건을 적용한다.
-- `docker compose down -v`는 팀 데이터를 삭제하므로 합의와 백업 없이 실행하지 않는다.
-- 기존 볼륨에는 `init-db/01_init.sql`이 다시 실행되지 않으므로 파일 병합만으로 기존 DB가 정상 마이그레이션되지는 않는다.
+- 강의 도메인은 현재 `language`, `situation`, `level`, `status` 계약으로 통합됐고 Spring 서비스 테스트가 통과합니다.
+- 새 볼륨은 `init-db/01_init.sql`로 전체 현재 스키마와 seed 데이터를 생성합니다.
+- 기존 볼륨은 `db-migration`이 `init-db/migrations/001_users_auth_compat.sql`과 이후 마이그레이션을 순서대로 적용합니다.
+- `lecture-db-migration`의 정상 상태는 계속 실행 중인 `Up`이 아니라 작업 완료 `Exited (0)`입니다.
+- `docker compose down -v`는 DB와 Kafka 데이터를 삭제하므로 사용자의 명시적 요청 없이 실행하지 않습니다.
 
 ### 기존 Auth Server 제한
 
 - 제공 Gateway/Auth 이미지의 JSON 로그인 경로는 사용하지 않는다.
 - 등록된 브라우저 클라이언트 `web-client`의 Authorization Code 흐름을 사용한다. 배포된 로컬 Auth Server 이미지는 Compose 기본값으로 연결하고, 다른 환경의 클라이언트 비밀값은 `AUTH_WEB_CLIENT_SECRET`으로 user-service에만 주입한다.
 
-## 7. 다음 개발 순서
+## 7. 구현 단계 완료 기록
 
 ### PR 1 — 기업 계정 기반 마무리
 
 1. 이메일 인증 요청·확인 API와 MailHog SMTP 연동: 완료. 제공 Gateway의 공개 경로 제약에 맞춰 `POST /api/users/register?action=request-email-verification`, `POST /api/users/register?action=confirm-email-verification`을 사용한다.
-2. 배포된 Auth Server 이미지 기준으로 별도 비밀값 설정 없이 브라우저 OAuth 로그인을 확인하고, 다른 환경에서는 `AUTH_WEB_CLIENT_SECRET`을 주입
-3. 관련 API·ERD·MVP 체크리스트 갱신
+2. 배포된 Auth Server 이미지 기준으로 별도 비밀값 설정 없이 브라우저 OAuth 로그인 확인 완료. 다른 환경에서는 `AUTH_WEB_CLIENT_SECRET`을 주입
+3. 관련 API·ERD·MVP 체크리스트 갱신 완료
 
 ### PR 2 — 초대코드·직원 가입
 

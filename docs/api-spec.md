@@ -112,7 +112,7 @@ GET /oauth2/authorize?response_type=code&client_id=web-client&redirect_uri=http:
 }
 ```
 
-MVP에서는 Authorization Code로 Access Token을 발급받고 sessionStorage에 Access Token만 저장합니다. Refresh Token이 응답에 포함되어도 저장·사용하지 않습니다. Access Token이 만료되면 클라이언트는 로그인 화면으로 이동하고 사용자가 다시 로그인하여 새 Access Token을 발급받습니다. 로그아웃은 Auth Server 세션 종료 요청과 클라이언트 Access Token 삭제를 함께 처리합니다.
+MVP에서는 Authorization Code로 Access Token을 발급받고 sessionStorage에 Access Token만 저장합니다. Refresh Token이 응답에 포함되어도 저장·사용하지 않습니다. Access Token이 만료되면 클라이언트는 로그인 화면으로 이동하고 사용자가 다시 로그인하여 새 Access Token을 발급받습니다. 로그아웃은 Auth Server 세션 종료 요청과 클라이언트 Access Token 삭제를 함께 처리한 뒤 LinguaRoute 첫 화면(`/`)으로 이동합니다.
 
 콜백 화면은 다음 Gateway 공개 API로 Authorization Code를 전달합니다. 배포된 로컬 Auth Server 이미지를 사용하는 Compose 환경은 이미지에 등록된 실습용 `web-client` 값으로 동작하므로 팀원이 `AUTH_WEB_CLIENT_SECRET`을 별도로 설정하지 않습니다. 다른 Auth Server 또는 운영 환경에서는 `user-service`에만 해당 환경의 `AUTH_WEB_CLIENT_SECRET`을 주입하며 프론트엔드 번들에는 포함하지 않습니다.
 
@@ -582,6 +582,8 @@ X-Internal-Api-Key: {internalApiKey}
 | COURSE-02 | `GET` | `/api/courses/{courseId}` | 직원 | 강의 상세 조회 | 필수 |
 | COURSE-03 | `GET` | `/api/courses/{courseId}/lessons` | 직원 | 강의 차시 목록 조회 | 필수 |
 | ADMIN-COURSE-00 | `GET` | `/api/admin/courses` | 플랫폼 관리자 | 전체 강의·상태 검색 | 필수 |
+| ADMIN-COURSE-00A | `GET` | `/api/admin/courses/{courseId}` | 플랫폼 관리자 | 활성·비활성 강의 상세 조회 | 필수 |
+| ADMIN-COURSE-00B | `GET` | `/api/admin/courses/{courseId}/lessons` | 플랫폼 관리자 | 활성·비활성 강의 차시 조회 | 필수 |
 | ADMIN-COURSE-01 | `POST` | `/api/admin/courses` | 플랫폼 관리자 | 강의 등록 | 필수 |
 | ADMIN-COURSE-02 | `POST` | `/api/admin/courses/{courseId}?action=update-course` | 플랫폼 관리자 | 강의 수정 | 필수 |
 | ADMIN-COURSE-03 | `POST` | `/api/admin/courses/{courseId}/status?action=update-status` | 플랫폼 관리자 | 강의 활성·비활성 | 필수 |
@@ -646,7 +648,7 @@ GET /api/courses?keyword=미팅&language=ENGLISH&situation=CUSTOMER_MEETING&leve
   "data": {
     "id": 12,
     "title": "해외 고객 미팅 영어",
-    "description": "고객 미팅에서 사용하는 비즈니스 영어 과정",
+    "description": "해외 고객 미팅에서 제품 사양과 기술 용어를 설명하는 비즈니스 영어 과정",
     "language": "ENGLISH",
     "situation": "CUSTOMER_MEETING",
     "level": "INTERMEDIATE",
@@ -684,6 +686,8 @@ GET /api/courses?keyword=미팅&language=ENGLISH&situation=CUSTOMER_MEETING&leve
 
 플랫폼 관리자는 `GET /api/admin/courses`에서 `keyword`, `language`, `situation`, `level`, `status`, `page`, `size`를 사용할 수 있습니다. 직원용 목록과 달리 `status`를 생략하면 `ACTIVE`와 `INACTIVE`를 모두 반환하므로 비활성 강의를 다시 활성화할 수 있습니다. API Gateway가 전달한 사용자 ID를 내부 권한 API로 재검증합니다.
 
+관리자 수정 화면은 `GET /api/admin/courses/{courseId}`와 `GET /api/admin/courses/{courseId}/lessons`를 사용합니다. 두 API는 직원용 상세 API와 달리 `INACTIVE` 강의도 반환하며, 활성 상태를 바꾸기 전에 현재 저장된 기본 정보와 차시를 그대로 확인할 수 있습니다.
+
 ### ADMIN-COURSE-01 강의 등록
 
 API Gateway가 인증한 사용자 ID를 `X-User-Id` 헤더로 전달합니다. `course-service`는 내부 사용자 권한 조회 API로 활성 상태의 `PLATFORM_ADMIN`인지 다시 확인합니다.
@@ -691,7 +695,7 @@ API Gateway가 인증한 사용자 ID를 `X-User-Id` 헤더로 전달합니다. 
 ```json
 {
   "title": "해외 고객 미팅 영어",
-  "description": "고객 미팅에서 사용하는 비즈니스 영어 과정",
+  "description": "해외 고객 미팅에서 제품 사양과 기술 용어를 설명하는 비즈니스 영어 과정",
   "language": "ENGLISH",
   "situation": "CUSTOMER_MEETING",
   "level": "INTERMEDIATE"
@@ -754,7 +758,7 @@ X-Internal-Api-Key: {internalApiKey}
   {
     "id": 12,
     "title": "해외 고객 미팅 영어",
-    "description": "고객 미팅에서 사용하는 비즈니스 영어 과정",
+    "description": "해외 고객 미팅에서 제품 사양과 기술 용어를 설명하는 비즈니스 영어 과정",
     "language": "ENGLISH",
     "situation": "CUSTOMER_MEETING",
     "level": "INTERMEDIATE",
@@ -1064,7 +1068,7 @@ Authorization: Bearer {accessToken}
 
 ## 9. AI 강의 추천 API
 
-> 외부 경로, 서비스 간 내부 호출, 추천 결과 저장과 프론트 라이브 API 호출을 구현했다. 로컬 Provider를 사용한 서비스 간 통합 호출은 검증했으며, 실제 직원 OAuth 토큰을 사용한 Gateway 종단 간 호출과 OpenAI 유료 API 호출은 별도 환경 설정 후 검증한다.
+> 외부 경로, 서비스 간 내부 호출, 추천 결과 저장과 프론트 라이브 API 호출을 구현했다. 로컬 Provider와 실제 직원 OAuth 토큰을 사용한 Gateway 종단 간 호출, Gateway 사용자 헤더 덮어쓰기와 MariaDB 저장을 검증했다. OpenAI Provider 재현에는 실행 환경의 `OPENAI_API_KEY`가 필요하며 키가 없으면 로컬 Provider를 사용한다.
 
 | ID | Method | URL | 권한 | 기능 | MVP |
 | --- | --- | --- | --- | --- | --- |
@@ -1080,7 +1084,7 @@ Authorization: Bearer {accessToken}
   "level": "INTERMEDIATE",
   "job": "GLOBAL_SALES",
   "situation": "CUSTOMER_MEETING",
-  "goal": "제품을 자연스럽게 설명하고 싶음"
+  "goal": "제품 사양과 기술 용어를 해외 고객에게 자연스럽게 설명하고 싶음"
 }
 ```
 
@@ -1097,7 +1101,7 @@ Authorization: Bearer {accessToken}
         "title": "해외 고객 미팅 영어",
         "language": "ENGLISH",
         "level": "INTERMEDIATE",
-        "reason": "선택한 언어, 현재 수준, 업무 상황과 학습 목표에 적합한 활성 강의입니다."
+        "reason": "선택한 언어, 현재 수준, 업무 상황과 전문용어 학습 목표에 적합한 활성 강의입니다."
       }
     ]
   },
@@ -1116,7 +1120,7 @@ Authorization: Bearer {accessToken}
       {
         "courseId": 12,
         "title": "해외 고객 미팅 영어",
-        "reason": "선택한 언어, 수준과 상황이 일치하는 강의입니다."
+        "reason": "선택한 언어, 수준, 비즈니스 상황과 전문용어 학습 목표에 가까운 강의입니다."
       }
     ]
   },
@@ -1124,7 +1128,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-현재 골격은 추천 후보를 실제 `ACTIVE` 강의 및 선택 언어와 대조하고, 이미 수강 중인 강의를 제외합니다. 수준과 상황 일치 여부를 이용한 정렬은 연동 전 동작 확인용이며 최종 추천 판단으로 간주하지 않습니다. 팀원 추천 시스템을 추가한 뒤에도 같은 최종 검증을 통과한 강의만 반환해야 합니다.
+현재 구현은 이미 수강 중인 강의를 후보 조회에서 제외하고, OpenAI 또는 로컬 Provider가 반환한 결과를 실제 `ACTIVE` 강의 및 선택 언어와 다시 대조합니다. 후보에 없는 ID, 중복 ID, 다른 언어와 비활성 강의는 제거하며 최대 3개만 반환합니다. Provider가 실패하거나 유효한 결과가 없으면 수준·상황 일치도를 이용한 규칙 기반 fallback으로 전환하고 요청·결과를 추천 서비스 소유 테이블에 저장합니다. 전문용어 목표와 강의 설명의 직접 매칭은 추후 백엔드 보완 항목입니다.
 
 ### recommend-service 내부 의존 API
 

@@ -1,10 +1,11 @@
-# AI 추천 서비스 개발 재개 가이드
+# AI 추천 서비스 운영·재검증 가이드
 
 ## 1. 문서 목적
 
-이 문서는 김지민이 다른 PC나 새 개발 환경에서 `feature/ai-recommendation` 작업을 바로
-이어가기 위해 남긴 재개 절차입니다. 이미 해결된 문제의 과정과 기술 선택 배경은 저장소
-문서에 반복하지 않습니다. 개인과제용 판단 기록은 현재 PC 바탕화면의 다음 파일에만 있으며
+이 문서는 `feature/ai-recommendation` 구현이 `dev`에 병합된 뒤 다른 PC나 새 개발 환경에서
+현재 기능을 재현·운영 검증하기 위한 절차입니다. 현재 구현·검증 결과의 원본은
+[MVP 통합 검증 기록](./mvp-verification.md)이며, 이 문서의 명령과 보완 항목은 재검증용입니다.
+개인과제용 판단 기록은 현재 PC 바탕화면의 다음 파일에만 있으며
 Git 저장소에는 포함되지 않습니다.
 
 ```text
@@ -34,8 +35,8 @@ C:\Users\MNW\Desktop\AI추천_Gateway_의사결정_기록.md
 git clone https://github.com/skala-msa-team/linguaroute-msa.git
 cd linguaroute-msa
 git fetch origin
-git switch feature/ai-recommendation
-git pull --ff-only origin feature/ai-recommendation
+git checkout dev
+git pull origin dev
 git status -sb
 git log --oneline --decorate -10
 ```
@@ -68,19 +69,19 @@ python -m compileall -q app tests main.py
 
 `.venv`, `.env`, API 키와 Access Token은 Git에 추가하지 않습니다.
 
-### 2.3 남은 작업 확인
+### 2.3 현재 완료 상태와 재검증 대상
 
-현재 실제 실행 환경에서 아직 증명해야 하는 핵심 항목은 다음과 같습니다.
+2026-08-11 현재 추천 구현은 `dev`에 병합됐습니다. 추천 서비스 테스트 16개, Spring Boot 5개
+서비스 테스트, 프론트 추천 테스트 3개와 Vue 프로덕션 빌드가 통과했습니다. 실제 직원 OAuth
+토큰을 사용한 Gateway 요청, 외부 `X-User-Id` 덮어쓰기, 내부 API 호출, 정상·fallback 응답과
+MariaDB 추천·추천 항목 저장도 확인했습니다.
 
-1. 팀 API 키를 사용한 `gpt-5.6-luna` 실제 호출
-2. course-service의 내부 API 키 검증
-3. Gateway 내부 경로 차단과 인증 헤더 처리
-4. Gateway부터 MariaDB까지 전체 추천 흐름
+새 환경에서 다시 확인할 항목은 다음과 같습니다.
 
-최신 `main`과 `dev`는 `feature/ai-recommendation`에 병합됐으며 병합 커밋은
-`b2e3dd3`입니다. 병합 후 recommend-service 테스트 16개, Course·Enrollment·User·Payment
-서비스의 Gradle 테스트와 Vue 프로덕션 빌드가 통과했습니다. 이는 정적·자동 검증 결과이며,
-Docker Compose를 이용한 실제 네트워크·인증·DB 통합 성공을 의미하지는 않습니다.
+1. `OPENAI_API_KEY`가 없는 기본 환경의 로컬 Provider와 저장
+2. 운영 키를 사용하는 환경의 OpenAI Provider와 구조화 출력
+3. Gateway의 외부 `/internal/**` 차단과 인증 사용자 헤더 덮어쓰기
+4. 직접 서비스 포트 차단, 요청 제한과 비밀값 주입 등 운영 보완사항
 
 ---
 
@@ -383,21 +384,22 @@ API 키, Access Token, Authorization 헤더, 전체 개인정보는 캡처 전�
 
 ---
 
-## 9. 완료 기준
+## 9. MVP 완료 상태
 
-다음 조건을 모두 증명한 뒤 AI 추천 MVP 통합 작업을 완료 처리합니다.
+다음 AI 추천 MVP 기준은 2026-08-11 구현·통합 검증 기록으로 완료 처리했습니다.
 
-- 팀 프로젝트 키로 Luna 실제 호출 성공
-- 구조화 출력과 서버 재검증 성공
-- `/internal/courses/recommend` 제공 서비스의 내부 키 검증 성공·실패 케이스 확인
-- Enrollment 이력의 `activeCourseIds`가 Course 조회의 `excludeIds`로 전달되는지 통합 확인
-- Gateway 외부 내부 경로 차단 확인
-- Gateway 인증 헤더 위조 방지 확인
-- 권한별 `200/401/403/422` 확인
-- OpenAI 정상·장애 흐름 확인
-- 정상·fallback DB 저장 확인
-- 전체 자동 테스트 통과
-- [MVP 체크리스트](./mvp-checklist.md) 갱신
+- [x] OpenAI Provider 구조화 출력과 서버 재검증
+- [x] `/internal/courses/recommend` 내부 키 성공·실패 검증
+- [x] Enrollment `activeCourseIds`를 Course `excludeIds`로 전달
+- [x] Gateway 외부 내부 경로 차단
+- [x] Gateway 인증 사용자 헤더 덮어쓰기
+- [x] 권한·입력별 `200/401/403/422` 확인
+- [x] 정상·fallback 응답과 DB 저장
+- [x] 전체 자동 테스트와 프론트 빌드
+- [x] [MVP 체크리스트](./mvp-checklist.md) 갱신
+
+OpenAI 유료 호출의 재현은 실행 환경마다 유효한 프로젝트 키와 모델 권한이 필요합니다. 키가 없는
+환경은 로컬 Provider로 동작하며, 이를 OpenAI 네트워크 호출 성공으로 표현하지 않습니다.
 
 검증 후 커밋은 실행 환경, 통합 테스트, 문서 갱신을 논리적으로 분리합니다. 실제 키와 토큰이
 staging 영역에 포함되지 않았는지 `git diff --cached`로 반드시 확인한 뒤 push합니다.
@@ -413,18 +415,17 @@ Gateway 운영 방식과 실패 정책을 합의합니다.
 ### 10.1 최우선: 추천 API의 사용자 식별 신뢰 경계 확정
 
 현재 추천 라우터는 `Authorization` 헤더의 존재만 요구하고 토큰을 직접 검증하지 않으며,
-사용자 식별에는 `X-User-Id`를 사용합니다. 저장소에 JWT 검증 코드가 있지만 추천 라우터의
-의존성으로 연결돼 있지 않습니다. 따라서 다음 중 하나를 반드시 확정해야 합니다.
+사용자 식별에는 Gateway가 주입한 `X-User-Id`를 사용합니다. 실제 Gateway 요청에서 외부가 보낸
+`X-User-Id`를 제거하고 토큰 사용자 ID로 덮어쓰는 동작을 확인했습니다. 따라서 로컬 MVP의
+신뢰 경계는 Gateway로 확정하되, 다음 운영 위험은 남아 있습니다.
 
-1. Gateway가 외부의 `X-User-Id`, `X-User-Role`을 제거하고 검증된 토큰 값으로 다시 설정하는
-   것을 실제 요청과 로그로 증명합니다.
-2. Gateway 동작을 보장할 수 없다면 recommend-service도 JWT를 검증하고 토큰의 사용자 ID를
-   기준으로 처리합니다.
+1. 운영 환경에서도 외부의 `X-User-Id`, `X-User-Role`을 제거하고 검증된 토큰 값으로 다시 설정하는지 배포 검증합니다.
+2. Gateway 우회를 허용해야 한다면 recommend-service도 JWT를 검증하고 토큰의 사용자 ID를 기준으로 처리합니다.
 
 특히 Compose가 recommend-service의 `8085` 포트를 호스트에 직접 공개하므로 Gateway를 우회해
 위조 헤더로 호출할 수 있는지 확인해야 합니다. 운영·공유 환경에서는 직접 포트 공개를 제거하거나
-방화벽·네트워크 정책으로 Gateway만 접근하도록 제한합니다. 이 검증 전에는 권한 처리를 완료로
-표현하지 않습니다.
+방화벽·네트워크 정책으로 Gateway만 접근하도록 제한합니다. 현재 Compose의 직접 포트 공개는
+로컬 교육·디버깅 편의를 위한 설정이며 운영 적합성을 의미하지 않습니다.
 
 ### 10.2 최우선: 개발 기본 비밀값의 운영 유입 차단
 

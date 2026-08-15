@@ -9,6 +9,14 @@ export const courseApi = {
     return api.get('/api/admin/courses', { params })
   },
 
+  getAdminById(id) {
+    return api.get(`/api/admin/courses/${id}`)
+  },
+
+  getAdminLessons(courseId) {
+    return api.get(`/api/admin/courses/${courseId}/lessons`)
+  },
+
   getById(id) {
     return api.get(`/api/courses/${id}`)
   },

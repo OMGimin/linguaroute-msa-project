@@ -22,7 +22,7 @@
           <div class="course-info"><div><span class="tag" :class="course.status === 'INACTIVE' ? 'gray' : ''">{{ course.status }}</span><span>{{ course.language }} · {{ course.level }} · {{ course.situation }}</span></div><h2>{{ course.title }}</h2><p>COURSE-{{ course.id }}</p></div>
           <div class="course-actions"><router-link class="button small" :to="`/admin/courses/${course.id}/edit`"><Pencil :size="14" /> 수정</router-link><button class="button small" @click="toggle(course)"><Power :size="14" /> {{ course.status === 'ACTIVE' ? '비활성화' : '활성화' }}</button></div>
         </article>
-        <p v-if="!courses.length" class="empty-message">조건에 맞는 활성 강의가 없습니다.</p>
+        <p v-if="!courses.length" class="empty-message">조건에 맞는 강의가 없습니다.</p>
       </div>
     </section>
   </AppShell>

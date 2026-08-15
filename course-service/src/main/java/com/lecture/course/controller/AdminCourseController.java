@@ -35,6 +35,22 @@ public class AdminCourseController {
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id")))));
     }
 
+    @GetMapping("/{courseId}")
+    public ResponseEntity<CourseDto.ApiResponse<CourseDto.CourseResponse>> getCourse(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long courseId) {
+        userAuthorizationClient.requirePlatformAdmin(userId);
+        return ResponseEntity.ok(CourseDto.ApiResponse.success(courseService.getInternalCourse(courseId)));
+    }
+
+    @GetMapping("/{courseId}/lessons")
+    public ResponseEntity<CourseDto.ApiResponse<java.util.List<CourseDto.LessonResponse>>> getLessons(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long courseId) {
+        userAuthorizationClient.requirePlatformAdmin(userId);
+        return ResponseEntity.ok(CourseDto.ApiResponse.success(courseService.getLessons(courseId)));
+    }
+
     @PostMapping
     public ResponseEntity<CourseDto.ApiResponse<CourseDto.CourseResponse>> createCourse(
             @RequestHeader("X-User-Id") Long userId,

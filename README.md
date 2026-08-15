@@ -460,7 +460,7 @@ sequenceDiagram
     participant AI as OpenAI API 또는 로컬 Provider
     participant DB as MariaDB
 
-    FE->>GW: 언어·수준·직무·상황·목표로 추천 요청
+    FE->>GW: 직무·비즈니스 상황·전문용어 목표를 포함한 추천 요청
     GW->>RS: 추천 요청과 인증 사용자 ID 전달
     RS->>US: 내부 API로 최신 직원 권한·상태 조회
     US-->>RS: companyId·businessRole·status 반환
@@ -525,7 +525,7 @@ LinguaRoute는 소셜 로그인이 아니라 자체 이메일·비밀번호 계�
 - 위 분할 인프라 파일에서 `msa-lecture/auth-server:1.0` 이미지를 불러온 로컬 환경은 별도 `AUTH_WEB_CLIENT_SECRET` 설정 없이 실행됩니다. Compose가 배포 이미지의 로컬 실습용 `web-client` 등록값을 기본으로 주입합니다.
 - 다른 Auth Server 또는 운영 환경에서는 `AUTH_WEB_CLIENT_SECRET` 환경변수로 해당 환경의 등록값을 덮어써야 합니다.
 - 콜백은 `POST /api/users/register?action=exchange-oauth-code`로 코드를 전달합니다. user-service가 서버 간 통신으로 토큰을 교환하므로 프론트에 비밀값이 노출되지 않습니다.
-- 로그아웃은 Gateway가 같은 경로를 먼저 처리하지 않도록 Auth Server 공개 포트의 `POST http://localhost:9000/logout`으로 세션을 종료하고, 프론트는 sessionStorage의 Access Token을 삭제합니다. 프론트 설정값은 `VITE_AUTH_LOGOUT_URL`입니다.
+- 로그아웃은 Gateway가 같은 경로를 먼저 처리하지 않도록 Auth Server 공개 포트의 `POST http://localhost:9000/logout`으로 세션을 종료하고, 프론트는 sessionStorage의 Access Token을 삭제한 뒤 LinguaRoute 첫 화면(`/`)으로 이동합니다. 프론트 설정값은 `VITE_AUTH_LOGOUT_URL`입니다.
 
 ### 7. 데모 데이터
 
@@ -546,6 +546,7 @@ LinguaRoute는 소셜 로그인이 아니라 자체 이메일·비밀번호 계�
 - 기업: `스칼라테크`, `글로벌링크`
 - 요금제: `BUSINESS_50`, `STARTUP_20`
 - 활성 구독: 스칼라테크 월간 `BUSINESS_50`
+- 공개 요금제 화면은 위 두 요금제만 표시하고, 기업 관리자 로그인 상태에서는 `GET /api/plans` 응답의 좌석·월간·연간 가격으로 화면을 갱신합니다. 제공 Gateway의 고정 공개 허용 경로에는 `/api/plans`가 없으므로 로그인 전에는 같은 초기 데이터 기준의 공개 가격을 표시합니다.
 - 강의: 영어·일본어·중국어 과정 6개, 이 중 5개 활성
 - 수강: 스칼라테크 직원의 학습 중·수료·신청 상태 데이터
 

@@ -20,6 +20,7 @@ import { UserPlus,ArrowRight,UsersRound,Armchair,GraduationCap,ChartNoAxesCombin
 import AppShell from '@/components/AppShell.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { companyApi } from '@/api/company.js'
+import { averageProgress } from '@/domain/progress.js'
 
 const employees = ref([])
 const metrics = ref([])
@@ -32,10 +33,9 @@ onMounted(async () => {
     ])
     const employeeList = employeeResponse.data.data
     const enrollments = progressResponse.data.data.content
-    const progressByUser = new Map(enrollments.map((item) => [item.userId, Number(item.progressRate)]))
     employees.value = employeeList.map((employee) => ({
       ...employee, team: '-', courses: enrollments.filter((item) => item.userId === employee.userId).length,
-      progress: progressByUser.get(employee.userId) || 0, joined: employee.joinedAt
+      progress: averageProgress(enrollments.filter((item) => item.userId === employee.userId)), joined: employee.joinedAt
     }))
     const seats = seatResponse.data.data
     const activeEmployees = employeeList.filter((employee) => employee.status === 'ACTIVE').length
@@ -52,5 +52,6 @@ onMounted(async () => {
     loadError.value = error.response?.data?.message || '기업 학습 현황을 불러오지 못했습니다.'
   }
 })
+
 </script>
 <style scoped>.subscription-strip{display:grid;grid-template-columns:minmax(0,1fr) 250px auto;align-items:center;gap:24px;margin-bottom:14px;padding:17px 20px;color:white;background:var(--forest);border-radius:16px}.subscription-strip>div:first-child{display:flex;align-items:center;gap:11px}.subscription-strip strong{font-size:12px}.subscription-strip small{color:#93ad9d;font-size:9px}.seat-usage span{display:block;margin-bottom:6px;color:#a9c0b2;font-size:9px}.seat-usage b{color:white}.seat-usage .progress{background:rgba(255,255,255,.12)}.seat-usage .progress span{background:var(--lime)}.subscription-strip>a{display:flex;align-items:center;gap:6px;color:var(--lime);font-size:10px;font-weight:700}.company-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:14px;margin:14px 0}.section-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}.section-head h2{font-size:15px}.section-head p{margin-top:3px;color:var(--muted);font-size:9px}.section-head select{padding:6px 9px;background:var(--surface);border:1px solid var(--line);border-radius:7px;color:var(--muted);font-size:9px}.section-head button{color:var(--muted);background:transparent}.section-head a{display:flex;align-items:center;gap:5px;color:var(--forest-2);font-size:9px;font-weight:700}.chart{height:190px;display:flex;align-items:flex-end;gap:18px;padding:18px 10px 24px;border-bottom:1px solid var(--line)}.chart>span{position:relative;flex:1;background:#dfe8e0;border-radius:5px 5px 0 0}.chart>span:last-child{background:var(--forest-2)}.chart i{position:absolute;top:-19px;width:100%;font-style:normal;font-size:8px;text-align:center}.chart small{position:absolute;bottom:-21px;width:100%;color:var(--muted);font-size:8px;text-align:center}.activity-list{display:grid;gap:2px}.activity-list>div{display:flex;align-items:center;gap:10px;padding:9px;border-radius:9px}.activity-list>div:hover{background:var(--surface-2)}.activity-list>div>span{width:30px;height:30px;display:grid;place-items:center;color:var(--forest);background:var(--mint);border-radius:9px}.activity-list>div>span.blue{color:var(--blue);background:var(--blue-soft)}.activity-list>div>span.amber{color:#8b6419;background:var(--amber-soft)}.activity-list>div>span.purple{color:var(--purple);background:var(--purple-soft)}.activity-list p{flex:1}.activity-list strong,.activity-list small{display:block}.activity-list strong{font-size:9px}.activity-list small{margin-top:3px;color:var(--muted);font-size:8px}.employee-preview{padding:0;overflow:hidden}.employee-preview .section-head{padding:18px 20px 5px}.table-progress{display:flex;align-items:center;gap:8px}.table-progress .progress{width:75px}.table-progress b{font-size:9px}@media(max-width:1050px){.company-grid{grid-template-columns:1fr}.subscription-strip{grid-template-columns:1fr auto}.seat-usage{display:none}}@media(max-width:620px){.subscription-strip{grid-template-columns:1fr}.subscription-strip>div:first-child{align-items:flex-start;flex-direction:column}.chart{gap:8px}}</style>

@@ -10,12 +10,12 @@
           <h3>현재 수준</h3><div class="segment"><button v-for="item in ['초급','중급','고급']" :key="item" :class="{ active: level === item }" @click="level = item">{{ item }}</button></div>
         </template>
         <template v-else-if="step === 2">
-          <h2>업무에서 언제 가장 필요하신가요?</h2><p>직무와 자주 마주치는 상황을 선택해 주세요.</p>
+          <h2>업무에서 언제 가장 필요하신가요?</h2><p>직무와 자주 마주치는 비즈니스 상황을 선택해 주세요.</p>
           <div class="field"><label>직무</label><select v-model="job" class="select"><option>글로벌 세일즈</option><option>소프트웨어 개발</option><option>데이터 분석</option><option>프로덕트 관리</option></select></div>
           <div class="choice-grid situations"><button v-for="item in situations" :key="item.label" :class="{ selected: situation === item.label }" @click="situation = item.label"><component :is="item.icon" :size="20" /><strong>{{ item.label }}</strong><small>{{ item.desc }}</small></button></div>
         </template>
         <template v-else>
-          <h2>이번 학습으로 이루고 싶은 목표는?</h2><p>구체적으로 적을수록 더 정확한 추천을 받을 수 있어요.</p>
+          <h2>이번 학습으로 이루고 싶은 목표는?</h2><p>업무 상황과 전문용어를 구체적으로 적을수록 더 정확한 추천을 받을 수 있어요.</p>
           <div class="field"><label>학습 목표</label><textarea v-model="goal" maxlength="200" class="textarea"></textarea><small>{{ goal.length }} / 200자</small></div>
           <div class="summary-card"><Sparkles :size="20" /><span><strong>추천 조건 요약</strong>{{ language }} · {{ level }} · {{ job }} · {{ situation }}</span></div>
         </template>
@@ -30,7 +30,7 @@
       <AsyncState v-else-if="resultMode === 'error'" type="error" title="추천 결과를 만들지 못했어요" :description="errorMessage" @retry="requestRecommendation" />
       <AsyncState v-else-if="recommendedCourses.length === 0" type="empty" title="추천할 강의가 없어요" description="선택한 언어로 등록된 활성 강의가 있는지 확인해 주세요." />
       <template v-else>
-        <div class="result-notice" :class="resultMode"><component :is="resultMode === 'ai' ? Sparkles : ShieldAlert" :size="19" /><span><strong>{{ resultMode === 'ai' ? 'AI 맞춤 추천 결과' : '규칙 기반 추천으로 전환했어요' }}</strong>{{ resultMode === 'ai' ? '입력한 직무·상황·목표를 분석해 추천했습니다.' : '외부 AI를 사용하지 못해 언어·수준·상황을 기준으로 추천했습니다.' }}</span></div>
+        <div class="result-notice" :class="resultMode"><component :is="resultMode === 'ai' ? Sparkles : ShieldAlert" :size="19" /><span><strong>{{ resultMode === 'ai' ? 'AI 맞춤 추천 결과' : '규칙 기반 추천으로 전환했어요' }}</strong>{{ resultMode === 'ai' ? '입력한 직무·비즈니스 상황·전문용어 목표를 분석해 추천했습니다.' : '외부 AI를 사용하지 못해 언어·수준·상황과 등록 강의 정보를 기준으로 추천했습니다.' }}</span></div>
         <div class="result-grid"><CourseTile v-for="course in recommendedCourses" :key="course.id" :course="course" /></div>
       </template>
     </section>
@@ -52,7 +52,7 @@ const language = ref('영어')
 const level = ref('중급')
 const situation = ref('고객 미팅')
 const job = ref('글로벌 세일즈')
-const goal = ref('해외 고객에게 제품을 자연스럽게 설명하고 질문에 자신 있게 답하고 싶어요.')
+const goal = ref('제품 사양과 기술 용어를 해외 고객에게 자연스럽게 설명하고 질문에 자신 있게 답하고 싶어요.')
 const showResults = ref(false)
 const resultMode = ref('ai')
 const isLoading = ref(false)

@@ -54,6 +54,7 @@
             <ArrowRight :size="18" />
           </button>
           <p class="security-note"><LockKeyhole :size="14" /> LinguaRoute는 이 화면에서 비밀번호를 직접 저장하지 않습니다.</p>
+          <p class="login-help">로그인에 실패하면 Auth Server에 인증 실패 안내가 표시됩니다. 업무용 이메일과 비밀번호를 다시 확인해 주세요.</p>
         </form>
 
         <div class="auth-divider"><span>처음이신가요?</span></div>
@@ -155,6 +156,7 @@ async function login() {
 .login-button { width: 100%; min-height: 50px; justify-content: space-between; padding: 0 18px; }
 .login-button:disabled { cursor: wait; opacity: .65; }
 .security-note { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--subtle); font-size: 10px; }
+.login-help { color: var(--muted); font-size: 10px; line-height: 1.6; text-align: center; }
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 25px 0 17px; color: var(--subtle); font-size: 10px; }
 .auth-divider::before, .auth-divider::after { height: 1px; flex: 1; content: ''; background: var(--line); }
 .signup-links { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

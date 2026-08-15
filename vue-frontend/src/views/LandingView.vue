@@ -7,14 +7,14 @@
           <div class="hero-copy animate-in">
             <p class="eyebrow">Language learning, routed right</p>
             <h1>우리 팀의 성장을<br><em>하나의 경로</em>로 잇다</h1>
-            <p class="hero-description">기업의 언어 교육 운영부터 직원의 맞춤 학습까지. LinguaRoute가 AI 추천과 데이터로 각자의 다음 단계를 연결합니다.</p>
+            <p class="hero-description">기업의 언어 교육 운영부터 직원의 비즈니스 외국어 학습까지. LinguaRoute가 직무·업무 상황·전문용어 목표를 AI 추천과 데이터로 연결합니다.</p>
             <div class="hero-actions"><router-link class="button accent" to="/signup/company">기업 무료 체험 <ArrowRight :size="17" /></router-link><router-link class="button" to="/signup/employee">초대코드로 참여</router-link></div>
             <div class="trust-row"><span>이미 함께 성장하는 팀</span><strong>SCALA</strong><strong>NOVA</strong><strong>BRIDGE</strong><strong>EDEN</strong></div>
           </div>
           <div class="route-visual animate-in" aria-label="개인화 학습 경로 미리보기">
             <div class="route-caption"><span class="live-dot"></span> 김민지님의 이번 주 학습 경로 <MoreHorizontal :size="17" /></div>
             <div class="route-card active-card">
-              <div class="route-number">01</div><div><span class="tag">지금 학습 중</span><h3>해외 고객 미팅 영어</h3><p>제품의 핵심 가치를 설명하는 법</p></div><div class="progress-ring"><span>68%</span></div>
+              <div class="route-number">01</div><div><span class="tag">지금 학습 중</span><h3>해외 고객 미팅 영어</h3><p>제품 사양과 기술 용어를 설명하는 법</p></div><div class="progress-ring"><span>68%</span></div>
             </div>
             <div class="route-line"><span></span></div>
             <div class="route-card next-card"><div class="route-number">02</div><div><span class="tag blue">AI 추천</span><h3>영어 프레젠테이션</h3><p>현재 목표에 가장 가까운 다음 과정</p></div><ArrowUpRight :size="20" /></div>

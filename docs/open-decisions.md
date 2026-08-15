@@ -1,6 +1,6 @@
-# LinguaRoute 구현 결정 및 착수 확인
+# LinguaRoute 구현 결정 및 현재 상태
 
-> 문서 상태: 구현 방침 확정
+> 문서 상태: 2026-08-11 현재 구현 경계와 운영 보완사항 반영
 
 시간이 제한된 MVP 개발을 위해 기술·정책 선택을 다음과 같이 고정합니다. 팀원과 에이전트는 별도 합의 없이 아래 기준으로 구현하며, 범위를 바꾸려면 기획서·API 명세·ERD를 함께 수정합니다.
 
@@ -8,11 +8,10 @@
 
 ### 1.1 Auth Server
 
-- 제공 `msa-lecture/auth-server:1.0` 이미지의 로그인·토큰 발급 기능은 우선 재사용합니다.
-- 이메일 인증, 아이디 찾기, 비밀번호 변경·재설정 API가 이미지에 없으면 수정 가능한 Auth Server 소스를 확보하여 같은 `auth-server` 책임으로 구현합니다.
-- 인증 기능을 `user-service`로 옮기지 않습니다. `user-service`는 사용자 프로필·기업 소속·역할만 소유합니다.
-- 착수 확인 담당: 인증·회원 담당, Gateway·통합 담당
-- 착수 완료 기준: `/api/auth/*` 각 API의 기존 지원 여부와 수정할 코드 위치를 기록합니다.
+- 제공 `msa-lecture/auth-server:1.0` 이미지는 이메일·비밀번호 로그인, OAuth2 Authorization Code와 JWT Access Token 발급을 담당합니다.
+- `user-service`는 공용 `users` 테이블의 비밀번호 해시, 이메일 인증, 아이디 찾기, 비밀번호 변경·재설정, 프로필·기업 소속·비즈니스 역할을 소유합니다.
+- Auth Server는 로그인 호환 필드만 읽고, 보호 API는 `user-service`에서 최신 `businessRole`, `companyId`, `status`를 확인합니다.
+- 위 경계는 Gateway OAuth2 코드 교환, MailHog 이메일 흐름과 실제 Bearer Token 호출로 검증했습니다.
 
 ### 1.2 데이터베이스
 
@@ -42,14 +41,16 @@
 
 ### 1.6 AI 추천
 
-- MVP에서는 언어·수준·직무·상황·목표를 이용한 강의 추천만 구현합니다.
+- MVP에서는 언어·수준·직무·비즈니스 상황·전문용어가 포함된 자연어 목표를 이용한 강의 추천만 구현합니다. 별도의 산업 도메인 코드 체계는 만들지 않고 `goal`과 강의 설명·상황 정보를 연결합니다.
 - 추가 AI 도구 라우팅은 구현하지 않습니다.
 - AI 호출에 실패하면 규칙 기반 추천을 반환하며, 두 방식 모두 `course-service`의 `ACTIVE` 강의와 요청 언어 일치를 검증합니다.
+- 추천 요청과 결과는 `recommend-service` 소유 `recommendations`, `recommendation_items`에 저장합니다.
+- 로컬 기본 환경은 API 키가 없으면 로컬 Provider를 사용하고, `OPENAI_API_KEY`가 있으면 OpenAI Provider를 사용합니다.
 
 ## 2. 공통 확정 사항
 
 - Refresh Token은 구현하지 않고 Access Token 만료 시 재로그인합니다.
-- Auth Server가 비밀번호·이메일 인증·아이디 찾기·비밀번호 재설정과 Access Token 발급을 소유합니다.
+- Auth Server는 로그인·Access Token 발급을, `user-service`는 비밀번호 해시·이메일 인증·아이디 찾기·비밀번호 변경·재설정을 소유합니다.
 - 아이디 찾기는 이름과 기업 사업자번호를 조회한 뒤 등록 이메일로만 안내합니다.
 - 구독 상태는 `PaymentCompleted`, `PaymentFailed`, `SubscriptionCanceled`, `SubscriptionExpired`, `SubscriptionRenewed` 이벤트로 전달합니다.
 - Kafka 소비자는 `processed_event` 테이블의 `eventId`로 중복 처리를 방지합니다.

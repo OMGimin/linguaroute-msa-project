@@ -17,7 +17,7 @@ def recommendation_request():
         level="INTERMEDIATE",
         job="GLOBAL_SALES",
         situation="CUSTOMER_MEETING",
-        goal="제품을 자연스럽게 설명하고 싶음",
+        goal="제품 사양과 기술 용어를 해외 고객에게 자연스럽게 설명하고 싶음",
     )
 
 

@@ -80,6 +80,21 @@ class CourseControllerIntegrationTest {
     }
 
     @Test
+    void 플랫폼관리자는_비활성강의_상세를_조회할수있다() throws Exception {
+        Long inactiveId = courseRepository.findByStatus(Course.Status.INACTIVE).getFirst().getId();
+
+        mockMvc.perform(get("/api/admin/courses/{courseId}", inactiveId)
+                        .with(jwt())
+                        .header("X-User-Id", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(inactiveId))
+                .andExpect(jsonPath("$.data.title").value("비활성 일본어"))
+                .andExpect(jsonPath("$.data.status").value("INACTIVE"));
+
+        verify(userAuthorizationClient).requirePlatformAdmin(1L);
+    }
+
+    @Test
     void 플랫폼관리자는_강의를_등록수정비활성화한다() throws Exception {
         String createBody = """
                 {"title":"출장 중국어","description":"출장 회화","language":"CHINESE",

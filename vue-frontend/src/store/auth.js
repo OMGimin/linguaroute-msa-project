@@ -43,7 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  function logout(redirect = true) {
+  async function logout(redirect = true) {
     accessToken.value = null
     user.value = null
     sessionStorage.removeItem('access_token')
@@ -52,11 +52,15 @@ export const useAuthStore = defineStore('auth', () => {
     if (!redirect) return
 
     const logoutUrl = import.meta.env.VITE_AUTH_LOGOUT_URL || 'http://localhost:9000/logout'
-    const form = document.createElement('form')
-    form.method = 'post'
-    form.action = logoutUrl
-    document.body.appendChild(form)
-    form.submit()
+    try {
+      await fetch(logoutUrl, {
+        method: 'POST',
+        credentials: 'include',
+        mode: 'no-cors'
+      })
+    } finally {
+      window.location.replace('/')
+    }
   }
 
   function startOAuthLogin() {

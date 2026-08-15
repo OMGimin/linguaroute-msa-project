@@ -1,4 +1,4 @@
-<template><AppShell><PageHeader eyebrow="My learning" title="내 학습" description="신청한 강의와 진행 상황을 한눈에 확인하고 이어서 학습하세요."/><div class="learning-tabs"><button v-for="item in tabs" :key="item" :class="{active:tab===item}" @click="tab=item">{{ item }} <span>{{ counts[item] }}</span></button></div><section class="learning-grid"><article v-for="course in visibleCourses" :key="course.enrollmentId" class="learning-card card"><div class="learning-thumb" :class="`tone-${course.tone}`"><img :src="course.image" :alt="course.title"/><span class="tag" :class="course.progress===100?'blue':''">{{ course.progress===100?'수강 완료':'학습 중' }}</span></div><div class="learning-body"><div class="learning-title"><span><small>{{ course.language }} · {{ course.level }}</small><h2>{{ course.title }}</h2></span><button aria-label="더보기"><MoreHorizontal :size="18"/></button></div><div class="learning-stats"><span><b>{{ course.progress }}%</b>진도율</span><span><b>{{ Math.round(course.progress/100*12) }} / 12</b>완료 차시</span><span><b>{{ course.completedAt || course.startedAt || course.enrolledAt || '-' }}</b>최근 학습</span></div><div class="progress"><span :style="`width:${course.progress}%`"></span></div><div class="next-lesson"><span class="route-dot"><Play :size="14" fill="currentColor"/></span><span><small>다음 차시</small><strong>{{ course.progress===100?'모든 차시를 완료했어요':'다음 필수 차시를 학습하세요.' }}</strong></span></div><router-link class="button" :class="course.progress===100?'':'primary'" :to="course.progress===100 || !course.nextLessonId ? `/courses/${course.id}` : `/learning/${course.enrollmentId}/lessons/${course.nextLessonId}`">{{ course.progress===100?'과정 다시 보기':'이어서 학습하기' }} <ArrowRight :size="16"/></router-link></div></article><router-link to="/courses" class="empty-card"><span><Plus :size="23"/></span><h3>새로운 강의 시작하기</h3><p>목표에 맞는 다음 강의를 찾아보세요.</p></router-link></section></AppShell></template>
+<template><AppShell><PageHeader eyebrow="My learning" title="내 학습" description="신청한 강의와 진행 상황을 한눈에 확인하고 이어서 학습하세요."/><div class="learning-tabs"><button v-for="item in tabs" :key="item" :class="{active:tab===item}" @click="tab=item">{{ item }} <span>{{ counts[item] }}</span></button></div><section class="learning-grid"><article v-for="course in visibleCourses" :key="course.enrollmentId" class="learning-card card"><div class="learning-thumb" :class="`tone-${course.tone}`"><img :src="course.image" :alt="course.title"/><span class="tag" :class="course.progress===100?'blue':''">{{ course.progress===100?'수강 완료':'학습 중' }}</span></div><div class="learning-body"><div class="learning-title"><span><small>{{ course.language }} · {{ course.level }}</small><h2>{{ course.title }}</h2></span><button aria-label="더보기"><MoreHorizontal :size="18"/></button></div><div class="learning-stats"><span><b>{{ course.progress }}%</b>진도율</span><span><b>{{ course.completedLessons }} / {{ course.totalLessons }}</b>완료 필수 차시</span><span><b>{{ course.completedAt || course.startedAt || course.enrolledAt || '-' }}</b>최근 학습</span></div><div class="progress"><span :style="`width:${course.progress}%`"></span></div><div class="next-lesson"><span class="route-dot"><Play :size="14" fill="currentColor"/></span><span><small>다음 차시</small><strong>{{ course.progress===100?'모든 차시를 완료했어요':'다음 필수 차시를 학습하세요.' }}</strong></span></div><router-link class="button" :class="course.progress===100?'':'primary'" :to="course.progress===100 || !course.nextLessonId ? `/courses/${course.id}` : `/learning/${course.enrollmentId}/lessons/${course.nextLessonId}`">{{ course.progress===100?'과정 다시 보기':'이어서 학습하기' }} <ArrowRight :size="16"/></router-link></div></article><router-link to="/courses" class="empty-card"><span><Plus :size="23"/></span><h3>새로운 강의 시작하기</h3><p>목표에 맞는 다음 강의를 찾아보세요.</p></router-link></section></AppShell></template>
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { MoreHorizontal,Play,ArrowRight,Plus } from '@lucide/vue'
@@ -6,6 +6,7 @@ import AppShell from '@/components/AppShell.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { courseApi } from '@/api/course.js'
 import { enrollmentApi } from '@/api/enrollment.js'
+import { buildLearningCourse } from '@/domain/learning.js'
 
 const tab = ref('전체')
 const liveCourses = ref([])
@@ -22,11 +23,12 @@ onMounted(async () => {
   try {
     const response = await enrollmentApi.getMyEnrollments()
     liveCourses.value = await Promise.all(response.data.data.map(async (enrollment) => {
-      const course = (await courseApi.getById(enrollment.courseId)).data.data
-      const lessons = (await courseApi.getLessons(enrollment.courseId)).data.data
-      return { ...course, id: enrollment.courseId, enrollmentId: enrollment.enrollmentId,
-        progress: Number(enrollment.progressRate), nextLessonId: lessons.find((lesson) => lesson.required)?.lessonId,
-        image: '', duration: '등록된 차시 기준', students: '-', tone: 'green' }
+      const [courseResponse, lessonResponse, detailResponse] = await Promise.all([
+        courseApi.getById(enrollment.courseId),
+        courseApi.getLessons(enrollment.courseId),
+        enrollmentApi.getById(enrollment.enrollmentId)
+      ])
+      return buildLearningCourse(courseResponse.data.data, enrollment, lessonResponse.data.data, detailResponse.data.data)
     }))
   } catch (_) {
     liveCourses.value = []

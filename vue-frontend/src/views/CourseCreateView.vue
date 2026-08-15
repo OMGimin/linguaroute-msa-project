@@ -31,7 +31,7 @@ const saved = ref(false)
 const saving = ref(false)
 const feedback = ref('')
 const status = ref('ACTIVE')
-const form = reactive({ title: '해외 고객 미팅 영어', description: '고객 미팅에서 사용하는 비즈니스 영어 과정입니다.', language: 'ENGLISH', situation: 'CUSTOMER_MEETING', level: 'INTERMEDIATE' })
+const form = reactive({ title: '', description: '', language: 'ENGLISH', situation: 'CUSTOMER_MEETING', level: 'INTERMEDIATE' })
 const lessons = reactive([{ title: '미팅 전, 관계를 여는 스몰토크', contentUrl: 'https://example.com/lessons/1', sequence: 1, required: true, durationSeconds: 1104 }, { title: '자연스럽게 안건 소개하기', contentUrl: 'https://example.com/lessons/2', sequence: 2, required: true, durationSeconds: 1330 }])
 
 function addLesson() { lessons.push({ title: '새 차시', contentUrl: '', sequence: lessons.length + 1, required: true, durationSeconds: 600 }) }
@@ -39,7 +39,7 @@ function removeLesson(index) { lessons.splice(index, 1); lessons.forEach((lesson
 onMounted(async () => {
   if (!isEdit.value) return
   try {
-    const [courseResponse, lessonResponse] = await Promise.all([courseApi.getById(route.params.id), courseApi.getLessons(route.params.id)])
+    const [courseResponse, lessonResponse] = await Promise.all([courseApi.getAdminById(route.params.id), courseApi.getAdminLessons(route.params.id)])
     const course = courseResponse.data.data
     Object.assign(form, { title: course.title, description: course.description, language: course.language, situation: course.situation, level: course.level })
     status.value = course.status

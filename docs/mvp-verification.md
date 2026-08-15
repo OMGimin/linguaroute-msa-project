@@ -21,8 +21,18 @@
 | 플랫폼 운영(user-service) | 플랫폼 관리자의 사용자·기업 검색·상태 조회, 일반 역할·비활성 관리자 차단 | 통과 |
 | 전체 API curl 회귀 | 공개·보호·내부 API, OAuth2, 이메일, Kafka 이벤트를 포함한 79개 요청 | 79/79 통과 |
 | 브라우저 | Chrome 역할별 38개 상황과 정리 후 관리자 강의·기업 진도 화면 2개 추가 확인 | 기존 38/38 및 추가 2개 통과 |
-| AI 추천 서비스 | 로컬 Provider로 사용자 권한·수강 이력·활성 강의 조회, 추천 저장 | 통과 |
-| AI 추천 화면 | 실제 API 요청 변환·응답 매핑 단위 테스트 및 프로덕션 빌드 | 통과 |
+| AI 추천 서비스 | 로컬 Provider로 사용자 권한·수강 이력·활성 강의 조회, 결과 재검증과 추천 저장 | 통과 |
+| AI 추천 화면 | 실제 API 요청 변환·응답 매핑 단위 테스트 3개 및 프로덕션 빌드 | 통과 |
+
+### 문서 동기화 전 재검증
+
+2026-08-11 현재 `dev`에서 Spring Boot 5개 서비스의 `./gradlew test`, 추천 서비스 테스트 16개, 프론트 추천 테스트 3개와 `npm run build`를 다시 실행해 모두 통과했습니다. 새 Docker 볼륨으로 재기동한 뒤 실제 직원 OAuth 토큰으로 Gateway 추천 API를 호출해 다음을 확인했습니다.
+
+- 외부에서 보낸 `X-User-Id: 9101`이 토큰 사용자 `9103`으로 덮어써짐
+- 기존 수강 중인 일본어 강의가 추천 후보에서 제외됨
+- 영어 추천은 `200`, 최대 3개 `ACTIVE` 강의와 이유 반환
+- `recommendations`에 사용자·기업·요청·출처·상태 저장
+- `recommendation_items`에 강의 ID·순위·추천 이유 저장
 
 ## 실제 Gateway 검증 경로
 
@@ -74,7 +84,7 @@ GET  /api/admin/companies?keyword=...&status=...&page=...&size=...
 - 기업 대시보드, 구독·결제, 강의 목록·상세·관리·등록, 내 학습·플레이어·수강, 기업 진도·직원 관리와 플랫폼 운영 화면은 현재 API를 호출한다. 응답이 비어 있으면 목업으로 대체하지 않고 빈 상태를 표시한다.
 - 이번 프론트 연결 변경은 `npm run build`로 정적 검증했다. 2026-08-11 라이브 재검증에서 Gateway의 서비스 토큰 발급과 `GET /api/plans`는 `200`을 반환했다. 배포된 분할 인프라 파일의 `msa-lecture/auth-server:1.0`을 사용하는 Compose 기본 구성에서는 별도 `AUTH_WEB_CLIENT_SECRET` 설정 없이 브라우저 Authorization Code 교환 API도 `200`을 반환한다. 다른 Auth Server를 사용하는 환경에서는 해당 등록값을 환경변수로 덮어써야 한다.
 - 플랫폼 운영 화면은 사용자·기업·결제·수강 운영 API를 직접 호출하며, 플랫폼 관리자 `200`과 일반 사용자 `403` 권한 분기를 통합 실행으로 확인했다.
-- 2026-08-11 전체 curl 회귀 검사에서 추천 API 골격을 포함한 79개 요청이 모두 통과했다. 제공 Gateway가 고정적으로 차단하는 `GET /api/terms/active` 대신 외부 계약인 `GET /api/users/register?action=active-terms`를 검증했다.
+- 2026-08-11 전체 curl 회귀 검사에서 추천 API를 포함한 79개 요청이 모두 통과했다. 제공 Gateway가 고정적으로 차단하는 `GET /api/terms/active` 대신 외부 계약인 `GET /api/users/register?action=active-terms`를 검증했다.
 - Chrome 재검증에서 기존 실패 5건(프로필, 기업명, 직원 상태, 강의 수정, 강의 상태)을 모두 통과했고, 테스트 중 변경한 값은 원래 값으로 복원 후 재조회했다.
 - AI 추천 화면은 별도 데모 모드 없이 `POST /api/courses/recommendations`를 호출하며, 로딩·빈 결과·오류와 규칙 기반 fallback 상태를 구분해 표시한다.
 - AI 추천 백엔드는 로컬 Provider를 사용한 직접 통합 호출에서 `200` 응답과 추천·추천 항목 DB 저장을 확인했다. Gateway는 클라이언트의 `X-User-Id`를 토큰 subject로 덮어쓰는 것도 확인했다.

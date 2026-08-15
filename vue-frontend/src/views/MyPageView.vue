@@ -3,7 +3,7 @@
     <PageHeader eyebrow="Account & access" title="내 정보" description="프로필, 비밀번호와 약관 동의를 관리하세요." />
     <div class="profile-layout">
       <aside class="profile-nav panel">
-        <div class="identity"><span class="avatar">박</span><span><strong>{{ user.name }}</strong><small>{{ user.email }}</small></span></div>
+        <div class="identity"><span class="avatar">{{ user.name?.[0] || '?' }}</span><span><strong>{{ user.name }}</strong><small>{{ user.email }}</small></span></div>
         <button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" @click="tab = item.id"><component :is="item.icon" :size="16" />{{ item.label }}</button>
       </aside>
 
