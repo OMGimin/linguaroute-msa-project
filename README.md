@@ -9,6 +9,7 @@
 - [MVP 체크리스트](./docs/mvp-checklist.md)
 - [API 명세서](./docs/api-spec.md)
 - [ERD](./docs/erd.md)
+- [AI 추천 개발 회고](./docs/learning-notes/ai-recommendation-development-retrospective.md)
 
 ## 팀 Git 협업 규칙
 
