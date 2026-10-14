@@ -28,6 +28,22 @@ services:
     networks:
       - lecture-net
 
+  db-migration:
+    image: mariadb:11.2
+    container_name: lecture-db-migration
+    command:
+      - sh
+      - -c
+      - for migration in /migrations/*.sql; do echo "Applying $${migration}"; mariadb -h mariadb -umanager -pSqlDba-1 lecture_db < "$${migration}"; done
+    volumes:
+      - ./init-db/migrations:/migrations:ro
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - lecture-net
+
   kafka:
     image: confluentinc/cp-kafka:7.7.0
     container_name: lecture-kafka
@@ -54,6 +70,15 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    networks:
+      - lecture-net
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: lecture-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
     networks:
       - lecture-net
 
@@ -95,6 +120,8 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
       eureka-server:
         condition: service_healthy
     healthcheck:
@@ -119,6 +146,36 @@ services:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-server:9000/oauth2/jwks
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8080
+      # [설계 이유 - 내부 API의 외부 노출 차단]
+      # 일반 서비스 라우트(/api/courses/** 등)는 internal 하위 경로까지 포함한다.
+      # 가장 높은 우선순위의 차단 라우트를 먼저 매칭해 외부에는 내부 API 존재와
+      # 인증 방식이 드러나지 않도록 404를 반환한다. 서비스 간 호출은 Gateway를
+      # 거치지 않고 Docker 네트워크에서 직접 수행하며 별도의 내부 키도 검증한다.
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_ID=auth-server
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_URI=http://auth-server:9000
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0=Path=/oauth2/**,/login,/login/**,/logout,/userinfo,/error,/default-ui.css,/favicon.ico,/.well-known/openid-configuration,/.well-known/oauth-authorization-server
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_ID=block-internal-api
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_URI=no://op
+      # 새 공통 규칙인 /internal/**와 전환 기간의 레거시 경로를 모두 막는다.
+      # 서비스 간 호출은 Gateway가 아닌 Docker 내부 주소를 사용하므로 외부 라우트가 필요 없다.
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0=Path=/internal/**,/api/courses/internal/**,/api/enrollments/internal/**,/api/payments/internal/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_FILTERS_0=SetStatus=404
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_ORDER=-100
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_ID=user-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_URI=lb://user-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0=Path=/api/users,/api/users/**,/api/companies,/api/companies/me,/api/companies/me/invitations,/api/companies/me/invitations/**,/api/companies/me/employees,/api/companies/me/employees/**,/api/companies/me/seats,/api/terms,/api/terms/**,/api/auth,/api/auth/**,/api/employees,/api/employees/**,/api/admin/users,/api/admin/users/**,/api/admin/companies,/api/admin/companies/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_3_ID=recommend-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_3_URI=lb://recommend-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_3_PREDICATES_0=Path=/api/courses/recommendations,/api/courses/recommendations/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_4_ID=course-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_4_URI=lb://course-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_4_PREDICATES_0=Path=/api/courses,/api/courses/**,/api/admin/courses,/api/admin/courses/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_5_ID=enrollment-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_5_URI=lb://enrollment-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_5_PREDICATES_0=Path=/api/enrollments,/api/enrollments/**,/api/companies/me/enrollments,/api/companies/me/enrollments/**,/api/admin/enrollments,/api/admin/enrollments/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_6_ID=payment-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_6_URI=lb://payment-service
+      - SPRING_CLOUD_GATEWAY_ROUTES_6_PREDICATES_0=Path=/api/payments,/api/payments/**,/api/plans,/api/plans/**,/api/subscriptions,/api/subscriptions/**,/api/admin/payments,/api/admin/payments/**
     depends_on:
       eureka-server:
         condition: service_healthy
@@ -144,7 +201,19 @@ services:
       - SPRING_DATASOURCE_PASSWORD=SqlDba-1
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-server:9000/oauth2/jwks
-      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://auth-server:9000
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-local-internal-api-key}
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - MAIL_HOST=mailhog
+      - MAIL_PORT=1025
+      - MAIL_FROM=${MAIL_FROM:-no-reply@linguaroute.local}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:3000}
+      - AUTH_SERVER_TOKEN_URL=http://auth-server:9000/oauth2/token
+      - AUTH_WEB_CLIENT_ID=${AUTH_WEB_CLIENT_ID:-web-client}
+      # 배포된 로컬 Auth Server 이미지의 web-client 등록값입니다.
+      # 다른 Auth Server를 사용하는 환경에서는 환경변수로 덮어씁니다.
+      - AUTH_WEB_CLIENT_SECRET=${AUTH_WEB_CLIENT_SECRET:-web-secret}
+      - AUTH_WEB_REDIRECT_URI=${AUTH_WEB_REDIRECT_URI:-http://localhost:3000/callback}
     depends_on:
       mariadb:
         condition: service_healthy
@@ -152,6 +221,10 @@ services:
         condition: service_healthy
       auth-server:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
     networks:
       - lecture-net
 
@@ -169,7 +242,9 @@ services:
       - SPRING_DATASOURCE_PASSWORD=SqlDba-1
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-server:9000/oauth2/jwks
-      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://auth-server:9000
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-local-internal-api-key}
+      - SERVICE_USER_SERVICE_URL=http://user-service:8081
     depends_on:
       mariadb:
         condition: service_healthy
@@ -194,8 +269,12 @@ services:
       - SPRING_DATASOURCE_PASSWORD=SqlDba-1
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-server:9000/oauth2/jwks
-      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://auth-server:9000
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8080
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      # recommend-service와 동일한 값을 주입해야 내부 수강 이력 요청을 검증할 수 있다.
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-local-internal-api-key}
+      - SERVICE_COURSE_SERVICE_URL=http://course-service:8082
+      - SERVICE_USER_SERVICE_URL=http://user-service:8081
     depends_on:
       mariadb:
         condition: service_healthy
@@ -222,8 +301,10 @@ services:
       - SPRING_DATASOURCE_PASSWORD=SqlDba-1
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://auth-server:9000/oauth2/jwks
-      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://auth-server:9000
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=http://localhost:8080
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-local-internal-api-key}
+      - SERVICE_USER_SERVICE_URL=http://user-service:8081
     depends_on:
       mariadb:
         condition: service_healthy
@@ -244,14 +325,25 @@ services:
     ports:
       - "8085:8085"
     environment:
+      - APP_PORT=8085
       - EUREKA_SERVER_URL=http://eureka-server:8761/eureka
       - EUREKA_INSTANCE_HOST=recommend-service
       - JWT_ISSUER_URI=http://localhost:8080
       - JWK_SET_URI=http://auth-server:9000/oauth2/jwks
       - ENROLLMENT_SERVICE_URL=http://enrollment-service:8083
       - COURSE_SERVICE_URL=http://course-service:8082
+      - USER_SERVICE_URL=http://user-service:8081
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-local-internal-api-key}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.6-luna}
+      - OPENAI_TIMEOUT_SECONDS=${OPENAI_TIMEOUT_SECONDS:-15}
+      - OPENAI_MAX_RETRIES=${OPENAI_MAX_RETRIES:-1}
+      - OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS:-600}
+      - DATABASE_URL=mysql+pymysql://manager:SqlDba-1@lecturedb:3306/lecture_db
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     depends_on:
+      mariadb:
+        condition: service_healthy
       eureka-server:
         condition: service_healthy
       auth-server:
@@ -261,6 +353,8 @@ services:
       enrollment-service:
         condition: service_started
       course-service:
+        condition: service_started
+      user-service:
         condition: service_started
     networks:
       - lecture-net

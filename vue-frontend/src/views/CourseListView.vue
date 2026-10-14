@@ -1,373 +1,96 @@
 <template>
-  <div class="page-wrapper">
-    <AppHeader />
-    <div class="page-layout">
-      <!-- 사이드바 -->
-      <aside class="sidebar">
-        <div class="sidebar-section">
-          <div class="sidebar-label">메뉴</div>
+  <AppShell>
+    <PageHeader eyebrow="Course library" title="강의 찾기" description="업무 상황과 현재 수준에 맞는 외국어 과정을 찾아보세요.">
+      <router-link class="button accent" to="/recommendations"><Sparkles :size="16" /> AI 추천받기</router-link>
+    </PageHeader>
 
-          <router-link
-            to="/courses"
-            class="sidebar-item"
-            :class="{ active: $route.path === '/courses' }"
-          >
-            <span class="si-icon">📚</span> 강의 목록
-          </router-link>
+    <section class="filter-panel panel">
+      <div class="search"><Search :size="18" /><input v-model="keyword" placeholder="강의명 또는 학습 목표로 검색" /></div>
+      <div class="filters">
+        <select v-model="language" class="select"><option value="">모든 언어</option><option v-for="item in LANGUAGE_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+        <select v-model="situation" class="select"><option value="">모든 상황</option><option v-for="item in SITUATION_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+        <select v-model="level" class="select"><option value="">모든 난이도</option><option v-for="item in LEVEL_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+        <button class="button small" @click="clearFilters"><SlidersHorizontal :size="15" /> 초기화</button>
+      </div>
+    </section>
 
-          <router-link
-            v-if="!isInstructor"
-            to="/enrollments"
-            class="sidebar-item"
-          >
-            <span class="si-icon">✅</span> 내 수강 목록
-          </router-link>
-
-          <router-link
-            to="/mypage"
-            class="sidebar-item"
-          >
-            <span class="si-icon">⭐</span> 마이페이지
-          </router-link>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="sidebar-label">계정</div>
-          <router-link to="/mypage" class="sidebar-item">
-            <span class="si-icon">👤</span> 마이페이지
-          </router-link>
-          <button class="sidebar-item sidebar-btn" @click="handleLogout">
-            <span class="si-icon">🚪</span> 로그아웃
-          </button>
-        </div>
-      </aside>
-
-      <!-- 메인 -->
-      <main class="main-content">
-        <div class="content-header">
-          <div>
-            <h1 class="page-title">강의 목록</h1>
-            <p class="page-subtitle" v-if="isInstructor">
-              강사 계정으로 등록된 강의를 확인하고 새 강의를 추가할 수 있습니다.
-            </p>
-          </div>
-
-          <router-link
-            v-if="isInstructor"
-            to="/courses/new"
-            class="btn btn-primary create-course-btn"
-          >
-            강의 등록
-          </router-link>
-        </div>
-
-        <!-- 필터 -->
-        <div class="filter-bar">
-          <button
-            v-for="cat in categories"
-            :key="cat"
-            :class="['filter-chip', { active: selectedCategory === cat }]"
-            @click="selectCategory(cat)"
-          >
-            {{ cat }}
-          </button>
-        </div>
-
-        <!-- 로딩 -->
-        <div v-if="loading" class="loading-grid">
-          <div v-for="i in 6" :key="i" class="skeleton-card">
-            <div class="skeleton-thumb"></div>
-            <div class="skeleton-body">
-              <div class="skeleton-line short"></div>
-              <div class="skeleton-line"></div>
-              <div class="skeleton-line medium"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 강의 그리드 -->
-        <div v-else-if="filteredCourses.length" class="course-grid fade-in">
-          <CourseCard
-            v-for="course in filteredCourses"
-            :key="course.id"
-            :course="course"
-          />
-        </div>
-
-        <!-- 빈 상태 -->
-        <div v-else class="empty-state">
-          <p>해당 카테고리의 강의가 없습니다.</p>
-
-          <router-link
-            v-if="isInstructor"
-            to="/courses/new"
-            class="btn btn-primary empty-action-btn"
-          >
-            첫 강의 등록하기
-          </router-link>
-        </div>
-      </main>
+    <div class="result-head">
+      <p><strong>{{ filtered.length }}</strong>개의 강의</p>
     </div>
-  </div>
+
+    <AsyncState v-if="viewState === 'loading'" type="loading" title="강의를 불러오고 있어요" description="등록된 ACTIVE 강의를 확인하고 있습니다." />
+    <AsyncState v-else-if="viewState === 'error'" type="error" title="강의를 불러오지 못했어요" :description="loadError" @retry="loadCourses" />
+    <AsyncState v-else-if="viewState === 'empty' || !filtered.length" type="empty" title="조건에 맞는 강의가 없어요" description="검색어나 필터를 바꾸면 더 많은 강의를 찾을 수 있어요." />
+    <template v-else>
+      <section class="course-grid"><CourseTile v-for="course in filtered" :key="course.id" :course="course" /></section>
+      <nav v-if="totalPages > 1" class="pagination" aria-label="페이지 이동"><button :disabled="page===0" @click="goPage(page-1)"><ChevronLeft :size="16" /></button><button v-for="item in totalPages" :key="item" :class="{active:page===item-1}" @click="goPage(item-1)">{{ item }}</button><button :disabled="page===totalPages-1" @click="goPage(page+1)"><ChevronRight :size="16" /></button></nav>
+    </template>
+  </AppShell>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import AppHeader from '@/components/AppHeader.vue'
-import CourseCard from '@/components/CourseCard.vue'
-import { useCourseStore } from '@/store/course.js'
-import { useAuthStore } from '@/store/auth.js'
+import { computed, onMounted, ref, watch } from 'vue'
+import { ChevronLeft, ChevronRight, Search, SlidersHorizontal, Sparkles } from '@lucide/vue'
+import AppShell from '@/components/AppShell.vue'
+import AsyncState from '@/components/AsyncState.vue'
+import CourseTile from '@/components/CourseTile.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { LANGUAGE_OPTIONS, LEVEL_OPTIONS, SITUATION_OPTIONS } from '@/constants/domain.js'
+import { courseApi } from '@/api/course.js'
 
-const router = useRouter()
-const courseStore = useCourseStore()
-const auth = useAuthStore()
+const keyword = ref('')
+const language = ref('')
+const situation = ref('')
+const level = ref('')
+const viewState = ref('ready')
+const liveCourses = ref([])
+const loadError = ref('잠시 후 다시 시도해 주세요.')
+const page = ref(0)
+const totalPages = ref(1)
 
-const { categories, loading } = courseStore
+const filtered = computed(() => liveCourses.value.filter((course) => {
+  const query = keyword.value.trim().toLowerCase()
+  return (!query || `${course.title} ${course.description}`.toLowerCase().includes(query))
+    && (!language.value || course.languageCode === language.value)
+    && (!situation.value || course.situationCode === situation.value)
+    && (!level.value || course.levelCode === level.value)
+}))
 
-const selectedCategory = computed(() => courseStore.selectedCategory)
-const isInstructor = computed(() => auth.user?.role === 'INSTRUCTOR')
-
-const filteredCourses = computed(() => {
-  if (!Array.isArray(courseStore.courses)) return []
-  if (selectedCategory.value === '전체') return courseStore.courses
-  return courseStore.courses.filter(c => c.category === selectedCategory.value)
-})
-
-function selectCategory(cat) {
-  courseStore.setCategory(cat)
+async function loadCourses() {
+  viewState.value = 'loading'
+  try {
+    const response = await courseApi.getCourses({ keyword: keyword.value || undefined, language: language.value || undefined, situation: situation.value || undefined, level: level.value || undefined, page: page.value, size: 20 })
+    liveCourses.value = response.data.data.content.map((course) => ({
+      id: course.courseId, title: course.title, description: '', image: '', duration: '-', students: '-', languageCode: course.language,
+      language: course.language, situationCode: course.situation, situation: course.situation,
+      levelCode: course.level, level: course.level, status: course.status, tone: 'green'
+    }))
+    totalPages.value = Math.max(1, Math.ceil(response.data.data.totalElements / response.data.data.size))
+    viewState.value = 'ready'
+  } catch (error) {
+    liveCourses.value = []
+    loadError.value = error.response?.data?.message || '잠시 후 다시 시도해 주세요.'
+    viewState.value = 'error'
+  }
 }
 
-function handleLogout() {
-  auth.logout()
-  router.push('/')
+onMounted(loadCourses)
+watch([keyword, language, situation, level], () => { page.value = 0; loadCourses() })
+
+function goPage(nextPage) {
+  page.value = nextPage
+  loadCourses()
 }
 
-onMounted(() => {
-  courseStore.fetchCourses()
-})
+function clearFilters() {
+  keyword.value = ''
+  language.value = ''
+  situation.value = ''
+  level.value = ''
+  loadCourses()
+}
 </script>
 
 <style scoped>
-.page-wrapper {
-  min-height: 100vh;
-  background: var(--color-bg-secondary);
-}
-
-.page-layout {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 32px 24px;
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 28px;
-}
-
-/* 사이드바 */
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sidebar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.sidebar-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted);
-  padding: 8px 12px 4px;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  transition: var(--transition);
-  background: none;
-  border: none;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  font-family: var(--font-sans);
-  text-decoration: none;
-}
-
-.sidebar-item:hover {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-}
-
-.sidebar-item.active {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-weight: 500;
-}
-
-.si-icon {
-  font-size: 15px;
-}
-
-.sidebar-btn {
-  color: var(--color-text-secondary);
-}
-
-/* 메인 */
-.main-content {
-  min-width: 0;
-}
-
-.content-header {
-  margin-bottom: 20px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.page-subtitle {
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.create-course-btn {
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-/* 필터 */
-.filter-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.filter-chip {
-  padding: 7px 16px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1.5px solid var(--color-border);
-  background: var(--color-bg-primary);
-  color: var(--color-text-secondary);
-  transition: var(--transition);
-  cursor: pointer;
-}
-
-.filter-chip:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.filter-chip.active {
-  background: var(--color-primary);
-  color: #fff;
-  border-color: var(--color-primary);
-}
-
-/* 강의 그리드 */
-.course-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-/* 스켈레톤 */
-.loading-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.skeleton-card {
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-}
-
-.skeleton-thumb {
-  height: 120px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-
-.skeleton-body {
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.skeleton-line {
-  height: 12px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-
-.skeleton-line.short {
-  width: 40%;
-}
-
-.skeleton-line.medium {
-  width: 70%;
-}
-
-@keyframes shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* 빈 상태 */
-.empty-state {
-  text-align: center;
-  padding: 80px 0;
-  color: var(--color-text-muted);
-  font-size: 15px;
-}
-
-.empty-action-btn {
-  display: inline-flex;
-  margin-top: 16px;
-  text-decoration: none;
-}
-
-@media (max-width: 992px) {
-  .page-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .course-grid,
-  .loading-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .content-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
+.filter-panel{display:flex;gap:12px;margin-bottom:22px;padding:14px}.search{height:44px;display:flex;align-items:center;gap:9px;flex:1;padding:0 12px;background:var(--surface-2);border-radius:10px;color:var(--muted)}.search input{width:100%;background:transparent;border:0;outline:0;font-size:12px}.filters{display:flex;gap:8px}.filters .select{width:130px;min-height:44px;font-size:11px}.result-head{display:flex;align-items:center;justify-content:space-between;margin:0 2px 14px;color:var(--muted);font-size:11px}.result-head strong{color:var(--ink);font-size:13px}.preview-control{display:flex;align-items:center;gap:8px}.preview-control span{font-size:9px}.preview-control select{padding:7px 26px 7px 9px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:8px;font-size:9px}.course-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.pagination{display:flex;justify-content:center;gap:4px;margin-top:32px}.pagination button{width:35px;height:35px;display:grid;place-items:center;color:var(--muted);background:transparent;border-radius:8px}.pagination button.active{color:white;background:var(--forest)}@media(max-width:1100px){.filter-panel{align-items:stretch;flex-direction:column}.course-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.filters{display:grid;grid-template-columns:1fr 1fr}.filters .select{width:100%}.course-grid{grid-template-columns:1fr}.result-head{align-items:flex-start;flex-direction:column;gap:9px}}
 </style>

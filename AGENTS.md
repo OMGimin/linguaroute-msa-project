@@ -44,13 +44,59 @@ API, 데이터 모델 또는 실행 방식이 변경되면 관련 코드와 문�
 - 로컬 통합 환경: 루트 `docker-compose.yml`
 - 공통 API 진입점: API Gateway
 
+### 팀원 로컬 인프라 최초 설정
+
+팀원은 프로젝트 루트에 아래 세 분할 파일을 먼저 준비합니다.
+
+```text
+infra-images.tar.gz.part-aa
+infra-images.tar.gz.part-ab
+infra-images.tar.gz.part-ac
+```
+
+세 파일은 제공 Auth Server와 API Gateway 이미지 묶음입니다. 처음 한 번만 합쳐서 Docker에 불러옵니다.
+
+```bash
+cat infra-images.tar.gz.part-aa infra-images.tar.gz.part-ab infra-images.tar.gz.part-ac > infra-images.tar.gz
+docker load -i infra-images.tar.gz
+docker image inspect msa-lecture/auth-server:1.0
+docker image inspect msa-lecture/api-gateway:1.0
+```
+
+현재 저장소의 소스 서비스를 처음 실행하거나 코드 변경을 반영할 때는 다음 명령을 순서대로 실행합니다.
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+이미 현재 소스로 서비스 이미지를 빌드한 뒤 단순히 다시 실행하는 경우에는 다운로드와 재빌드를 막을 수 있습니다.
+
+```bash
+docker compose up -d --no-build --pull never
+docker compose ps
+```
+
+기동 확인은 Spring 서비스의 `/actuator/health`와 FastAPI 추천 서비스의 `/health`를 사용합니다.
+
+기존 MariaDB 볼륨은 `init-db`가 다시 적용되지 않으므로 Compose의 `db-migration` 서비스가 `init-db/migrations/001_users_auth_compat.sql`을 Auth Server보다 먼저 매번 실행합니다. `lecture-db-migration`의 정상 상태는 계속 실행 중인 `Up`이 아니라 작업을 마친 `Exited (0)`입니다. 이 마이그레이션이 실패하면 Auth Server를 먼저 실행하거나 볼륨을 임의로 삭제하지 말고 마이그레이션 로그와 기존 스키마를 확인합니다.
+
+- 위 이미지 묶음의 `msa-lecture/auth-server:1.0`을 사용하는 로컬 Compose 환경에서는 팀원이 `AUTH_WEB_CLIENT_SECRET`을 별도로 만들거나 `.env`에 입력하지 않습니다. `docker-compose.yml`이 배포 이미지의 로컬 실습용 `web-client` 등록값을 기본으로 `user-service`에 주입합니다.
+- 다른 Auth Server 또는 운영 환경에서만 `AUTH_WEB_CLIENT_SECRET` 환경변수로 해당 환경의 등록값을 덮어씁니다.
+- 이 인프라 묶음에는 현재 확인 기준 Auth Server와 API Gateway만 포함됩니다. 저장소 소스 서비스 이미지까지 포함된 강사 배포용 전체 묶음과 혼동하지 않습니다.
+- 강사가 `docker-compose.local.yml`과 별도의 `msa-lecture-images.part.*` 전체 묶음을 함께 배포한 경우에는 그 배포 안내의 `--no-build --pull never` 절차를 우선합니다.
+- 팀에 전달하는 완전 오프라인 ARM64 실행 파일은 `docker-compose.local.yml`, `msa-lecture-images-arm64.tar.part-aa`, `msa-lecture-images-arm64.tar.part-ab`, `msa-lecture-images-arm64.tar.part-ac` 네 개입니다. 세 조각을 `cat msa-lecture-images-arm64.tar.part-* > msa-lecture-images-arm64.tar`로 합친 뒤 `shasum -a 256 -c msa-lecture-images-arm64.tar.sha256`, `docker load -i msa-lecture-images-arm64.tar`, `docker compose -f docker-compose.local.yml up -d --no-build --pull never` 순서로 실행합니다.
+- `docker-compose.local.yml`은 ARM64 사전 빌드 이미지 전용이므로 이 파일로 `docker compose build` 또는 `docker compose up --build`를 실행하지 않습니다.
+- 현재 저장소 구성의 상세 실행 순서는 [`README.md`](./README.md)를 따릅니다.
+
 서비스별 책임을 유지합니다. 다른 서비스의 내부 구현을 편의상 침범하지 않습니다.
 
 - `course-service`는 강의와 차시를 소유합니다.
 - `recommend-service`는 추천 요청과 추천 결과를 소유하며, `course-service` API로 `ACTIVE` 상태 및 요청 언어 일치 여부를 검증합니다.
-- 기존 Auth Server는 OAuth2 로그인과 Access Token 발급을 담당하며 공용 `users` 테이블의 호환 필드를 읽습니다.
+- 기존 Auth Server는 공용 `users` 테이블의 호환 필드를 읽어 자체 이메일·비밀번호 로그인 후 OAuth2 Authorization Code 흐름으로 JWT Access Token을 발급합니다. 소셜 로그인은 구현하지 않습니다.
 - `user-service`는 비밀번호 해시, 이메일 인증, 아이디 찾기, 비밀번호 변경·재설정, 기업·사용자 프로필, 비즈니스 역할·기업 소속, 초대·좌석과 약관 동의를 소유합니다.
-- 서버 수를 늘리지 않습니다. 기존 Gateway 한 대의 라우팅·보안 설정만 목표 API에 맞게 수정합니다.
+- 서버 수를 늘리지 않습니다. 제공 Gateway 이미지는 수정하지 않고, `docker-compose.yml` 환경변수로 가능한 라우팅만 보정합니다. Gateway 이미지의 공개 허용 경로가 고정되어 있으면 외부 API 계약을 그 허용 경로에 맞추고 문서에 명시합니다.
 
 ### 3.1 목표 서비스
 
@@ -222,8 +268,13 @@ git diff --cached
 ## 8. API 규칙
 
 - 외부 요청은 API Gateway와 `/api` 경로를 기준으로 설계합니다.
+- 내부 API는 Gateway 외부 공개 경로에 노출하지 않고 `/internal/**` 경로로 분리합니다.
+- Gateway는 외부 요청의 `/api/**/internal/**` 접근을 차단합니다.
+- 서비스 간 내부 호출은 Gateway를 거치지 않고 대상 서비스를 직접 호출하며, 호출자는 `X-Internal-Api-Key` 헤더를 전달합니다.
+- 내부 API 제공 서비스는 `X-Internal-Api-Key`를 실행 환경의 `INTERNAL_API_KEY`와 비교하여 검증합니다.
+- 신규 내부 API를 `/api/{service}/internal/**` 형태로 만들지 않습니다. 기존 코드에 남은 `/api/**/internal/**` 경로는 담당 범위에서 `/internal/**`로 이전하고 호출 코드를 함께 수정합니다.
 - 보호 API는 Bearer Token과 역할·기업 소속 권한을 모두 검증합니다.
-- MVP에서는 Refresh Token을 구현하지 않습니다. Access Token 만료 시 재로그인하며, 로그아웃 시 클라이언트가 저장한 Access Token을 삭제합니다.
+- 브라우저 로그인은 Auth Server의 OAuth2 Authorization Code 흐름을 사용합니다. Auth Server가 Refresh Token을 반환하더라도 MVP 프론트엔드는 저장·갱신에 사용하지 않으며, Access Token 만료 시 재로그인합니다. 로그아웃은 Auth Server의 `POST /logout`과 클라이언트 Access Token 삭제를 함께 처리합니다.
 - Access Token의 기존 로그인 역할은 비즈니스 권한으로 사용하지 않습니다. 보호 API는 `user-service`의 내부 권한 조회로 최신 `businessRole`, `companyId`, `status`를 확인합니다.
 - 요청 DTO, 엔티티, 응답 DTO의 책임을 분리합니다.
 - 정상 및 예외 HTTP 상태 코드를 구분하고 공통 오류 형식을 유지합니다.

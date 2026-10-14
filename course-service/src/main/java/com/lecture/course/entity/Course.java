@@ -67,4 +67,21 @@ public class Course {
         ACTIVE, INACTIVE
     }
 
+    public void update(
+            String title,
+            String description,
+            Language language,
+            Situation situation,
+            Level level) {
+        this.title = title;
+        this.description = description;
+        this.language = language;
+        this.situation = situation;
+        this.level = level;
+    }
+
+    public void changeStatus(Status status) {
+        this.status = status;
+    }
+
 }

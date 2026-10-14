@@ -2,15 +2,18 @@ import api from './index.js'
 
 export const enrollmentApi = {
   getMyEnrollments() {
-    return api.get('/api/enrollments/my')
+    return api.get('/api/enrollments/me')
   },
   enroll(courseId) {
     return api.post('/api/enrollments', { courseId })
   },
-  cancel(enrollmentId) {
-    return api.delete(`/api/enrollments/${enrollmentId}`)
+  getById(enrollmentId) {
+    return api.get(`/api/enrollments/${enrollmentId}`)
   },
-  getRecommendations(userId) {
-    return api.get(`/api/recommend/${userId}`)
+  startLesson(enrollmentId, lessonId) {
+    return api.post(`/api/enrollments/${enrollmentId}/lessons/${lessonId}/start`)
+  },
+  completeLesson(enrollmentId, lessonId) {
+    return api.post(`/api/enrollments/${enrollmentId}/lessons/${lessonId}/complete`)
   }
 }

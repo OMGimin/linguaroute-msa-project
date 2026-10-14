@@ -1,718 +1,92 @@
 <template>
-  <div class="page-wrapper">
-    <AppHeader />
-    <div class="page-layout">
-      <aside class="sidebar">
-        <div class="sidebar-section">
-          <div class="sidebar-label">메뉴</div>
-
-          <router-link to="/courses" class="sidebar-item">
-            <span class="si-icon">📚</span> 강의 목록
-          </router-link>
-
-          <router-link
-            v-if="!isInstructor"
-            to="/enrollments"
-            class="sidebar-item"
-          >
-            <span class="si-icon">✅</span> 내 수강 목록
-          </router-link>
-
-          <router-link to="/mypage" class="sidebar-item active">
-            <span class="si-icon">⭐</span> 마이페이지
-          </router-link>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="sidebar-label">계정</div>
-          <button class="sidebar-item sidebar-btn" @click="handleLogout">
-            <span class="si-icon">🚪</span> 로그아웃
-          </button>
-        </div>
+  <AppShell>
+    <PageHeader eyebrow="Account & access" title="내 정보" description="프로필, 비밀번호와 약관 동의를 관리하세요." />
+    <div class="profile-layout">
+      <aside class="profile-nav panel">
+        <div class="identity"><span class="avatar">{{ user.name?.[0] || '?' }}</span><span><strong>{{ user.name }}</strong><small>{{ user.email }}</small></span></div>
+        <button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" @click="tab = item.id"><component :is="item.icon" :size="16" />{{ item.label }}</button>
       </aside>
 
-      <main class="main-content">
-        <!-- 프로필 카드 -->
-        <div class="profile-card fade-in-up">
-          <div class="profile-avatar">{{ auth.user?.name?.charAt(0) || '?' }}</div>
-          <div class="profile-info">
-            <h2 class="profile-name">{{ auth.user?.name || '사용자' }}</h2>
-            <p class="profile-email">{{ auth.user?.email || '-' }}</p>
-            <span class="badge" :class="isInstructor ? 'badge-amber' : 'badge-blue'">
-              {{ isInstructor ? '강사' : '학생' }}
-            </span>
-          </div>
-        </div>
+      <section class="panel profile-panel">
+        <template v-if="tab === 'profile'">
+          <div class="section-title"><div><h2>기본 정보</h2><p>현재 백엔드 계약에서는 이름만 수정할 수 있습니다.</p></div><span class="tag">{{ user.status }}</span></div>
+          <form class="form-stack" @submit.prevent="saveProfile">
+            <div class="field"><label>이름</label><input v-model.trim="profileName" class="input" maxlength="100" required /></div>
+            <div class="field"><label>로그인 이메일</label><input class="input" :value="user.email" disabled /><small>이메일 변경은 MVP 범위에 포함되지 않습니다.</small></div>
+            <div class="account-grid"><div><small>비즈니스 역할</small><strong>{{ user.businessRole }}</strong></div><div><small>Auth 호환 역할</small><strong>{{ user.role }}</strong></div><div><small>소속 기업 ID</small><strong>{{ user.companyId ?? '없음' }}</strong></div><div><small>가입일</small><strong>{{ user.createdAt.slice(0, 10) }}</strong></div></div>
+            <p v-if="profileMessage" class="message"><CircleCheck :size="15" />{{ profileMessage }}</p><button class="button primary">이름 저장</button>
+          </form>
+        </template>
 
-        <!-- 학생 화면 -->
-        <section v-if="!isInstructor" class="recommend-section">
-          <h3 class="section-title">추천 강의</h3>
+        <template v-else-if="tab === 'security'">
+          <div class="section-title"><div><h2>비밀번호 변경</h2><p>현재 비밀번호를 확인한 후 새 비밀번호로 변경합니다.</p></div></div>
+          <form class="form-stack narrow" @submit.prevent="savePassword"><div class="field"><label>현재 비밀번호</label><input v-model="currentPassword" class="input" type="password" required /></div><div class="field"><label>새 비밀번호</label><input v-model="newPassword" class="input" type="password" minlength="8" maxlength="72" required /><small>8자 이상 72자 이하</small></div><div class="field"><label>새 비밀번호 확인</label><input v-model="newPasswordConfirm" class="input" type="password" minlength="8" maxlength="72" required /></div><p v-if="passwordSaved" class="message"><CircleCheck :size="15" />비밀번호가 변경되었습니다.</p><button class="button primary">비밀번호 변경</button></form>
+        </template>
 
-          <p v-if="recommendMessage" class="recommend-message">
-            {{ recommendMessage }}
-          </p>
+        <template v-else-if="tab === 'agreements'">
+          <div class="section-title"><div><h2>약관 및 동의</h2><p>활성 약관의 버전과 동의 상태를 확인합니다.</p></div></div>
+          <div class="term-list"><label v-for="term in terms" :key="term.id"><input v-model="term.agreed" type="checkbox" :disabled="term.required" /><span><strong>{{ term.required ? '[필수]' : '[선택]' }} {{ term.title }}</strong><small>버전 {{ term.version }} · 시행 {{ term.effectiveAt }}</small></span><span class="tag" :class="term.required ? '' : 'gray'">ID {{ term.id }}</span></label></div>
+          <p class="contract-help"><Info :size="15" />선택 약관은 <code>POST /api/users/me/agreements</code>의 agreementIds로 저장됩니다.</p>
+        </template>
 
-          <div v-if="recommendLoading" class="loading-row">
-            <div v-for="i in 3" :key="i" class="skeleton-card">
-              <div class="skeleton-thumb"></div>
-              <div class="skeleton-body">
-                <div class="skeleton-line short"></div>
-                <div class="skeleton-line"></div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else-if="recommendations.length" class="recommend-grid fade-in">
-            <CourseCard v-for="c in recommendations" :key="c.id" :course="c" />
-          </div>
-
-          <p v-else-if="recommendError" class="empty-text">
-            {{ recommendError }}
-          </p>
-
-          <p v-else class="empty-text">
-            아직 추천할 강의가 없습니다.
-          </p>
-        </section>
-
-        <!-- 강사 화면 -->
-        <section v-else class="instructor-section">
-          <div class="section-head">
-            <h3 class="section-title">내가 등록한 강좌</h3>
-            <span class="section-subtitle">등록한 강좌와 강좌별 수강생 수를 확인할 수 있습니다.</span>
-          </div>
-
-          <div class="summary-cards">
-            <div class="summary-card">
-              <div class="summary-label">등록 강좌 수</div>
-              <div class="summary-value">{{ myCourses.length }}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label">총 수강생 수</div>
-              <div class="summary-value">{{ totalEnrollmentCount }}</div>
-            </div>
-          </div>
-
-          <div v-if="instructorLoading" class="loading-row instructor-loading">
-            <div v-for="i in 3" :key="i" class="skeleton-card">
-              <div class="skeleton-thumb"></div>
-              <div class="skeleton-body">
-                <div class="skeleton-line short"></div>
-                <div class="skeleton-line"></div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else-if="myCourses.length" class="instructor-course-list fade-in">
-            <div
-              v-for="course in myCourses"
-              :key="course.id"
-              class="instructor-course-card"
-            >
-              <div class="course-card-top">
-                <div>
-                  <h4 class="course-title">{{ course.title }}</h4>
-                  <p class="course-desc">{{ course.description || '설명이 없습니다.' }}</p>
-                </div>
-                <span
-                  class="status-badge"
-                  :class="course.status === 'ACTIVE' ? 'status-active' : 'status-inactive'"
-                >
-                  {{ course.status || 'UNKNOWN' }}
-                </span>
-              </div>
-
-              <div class="course-meta-grid">
-                <div class="meta-box">
-                  <div class="meta-label">카테고리</div>
-                  <div class="meta-value">{{ course.category || '-' }}</div>
-                </div>
-                <div class="meta-box">
-                  <div class="meta-label">가격</div>
-                  <div class="meta-value">{{ formatPrice(course.price) }}</div>
-                </div>
-                <div class="meta-box">
-                  <div class="meta-label">수강생 수</div>
-                  <div class="meta-value">
-                    {{ course.enrollment_count ?? course.enrollmentCount ?? 0 }}명
-                  </div>
-                </div>
-                <div class="meta-box">
-                  <div class="meta-label">강좌 ID</div>
-                  <div class="meta-value">#{{ course.id }}</div>
-                </div>
-              </div>
-
-              <div class="course-card-actions">
-                <router-link :to="`/courses/${course.id}`" class="action-btn action-primary">
-                  강좌 보기
-                </router-link>
-              </div>
-            </div>
-          </div>
-
-          <p v-else-if="instructorError" class="empty-text">
-            {{ instructorError }}
-          </p>
-
-          <p v-else class="empty-text">
-            아직 등록한 강좌가 없습니다.
-          </p>
-        </section>
-      </main>
+        <template v-else>
+          <div class="danger-zone"><span><UserRoundX :size="24" /></span><h2>회원 탈퇴</h2><p>탈퇴하면 상태가 <b>WITHDRAWN</b>으로 변경되고 기존 Access Token으로도 보호 API를 사용할 수 없습니다.</p><label class="confirm"><input v-model="withdrawConfirmed" type="checkbox" />탈퇴 후 학습 기록과 서비스 접근이 제한되는 것을 확인했습니다.</label><button class="button danger" :disabled="!withdrawConfirmed" @click="withdrawMe">회원 탈퇴 요청</button><div v-if="withdrawn" class="withdraw-result"><TriangleAlert :size="16" />탈퇴 처리 후 저장된 Access Token을 삭제하고 로그인 화면으로 이동합니다.</div></div>
+        </template>
+      </section>
     </div>
-  </div>
+  </AppShell>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import AppHeader from '@/components/AppHeader.vue'
-import CourseCard from '@/components/CourseCard.vue'
-import { useAuthStore } from '@/store/auth.js'
-import { enrollmentApi } from '@/api/enrollment.js'
-import { courseApi } from '@/api/course.js'
+import { onMounted, reactive, ref } from 'vue'
+import { CircleCheck, FileCheck2, Info, LockKeyhole, TriangleAlert, UserRound, UserRoundX } from '@lucide/vue'
+import AppShell from '@/components/AppShell.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { authApi } from '@/api/auth.js'
+import { unwrapApiData } from '@/constants/domain.js'
 
-const router = useRouter()
-const auth = useAuthStore()
-
-const isInstructor = computed(() => auth.user?.role === 'INSTRUCTOR')
-
-/* 학생용 */
-const recommendations = ref([])
-const recommendLoading = ref(true)
-const recommendError = ref('')
-const recommendMessage = ref('')
-
-/* 강사용 */
-const myCourses = ref([])
-const instructorLoading = ref(true)
-const instructorError = ref('')
-
-const totalEnrollmentCount = computed(() =>
-  myCourses.value.reduce((sum, course) => {
-    const count = Number(course.enrollment_count ?? course.enrollmentCount ?? 0)
-    return sum + (Number.isNaN(count) ? 0 : count)
-  }, 0)
-)
-
-function handleLogout() {
-  auth.logout()
-  router.push('/')
-}
-
-function formatPrice(price) {
-  const value = Number(price ?? 0)
-  if (Number.isNaN(value)) return '-'
-  return `${value.toLocaleString()}원`
-}
-
-/**
- * course 객체에서 강사 식별자 추출
- */
-function getCourseInstructorId(course) {
-  return (
-    course.instructorId ??
-    course.instructor_id ??
-    course.instructor ??
-    course.teacherId ??
-    course.teacher_id ??
-    null
-  )
-}
-
-async function loadStudentRecommendations() {
-  try {
-    if (!auth.user) {
-      console.warn('[MyPage] auth.user is missing')
-      recommendError.value = '추천 강의를 준비 중입니다.'
-      return
-    }
-
-    if (!auth.user.id) {
-      console.warn('[MyPage] auth.user.id is missing:', auth.user)
-      recommendError.value = '추천 강의를 준비 중입니다.'
-      return
-    }
-
-    const res = await enrollmentApi.getRecommendations(auth.user.id)
-    console.log('[MyPage] recommendation response:', res.data)
-
-    const payload = res.data
-
-    if (Array.isArray(payload?.recommendedCourses)) {
-      recommendations.value = payload.recommendedCourses
-      recommendMessage.value = payload.message ?? ''
-    } else if (Array.isArray(payload?.data)) {
-      recommendations.value = payload.data
-      recommendMessage.value = payload.message ?? ''
-    } else if (Array.isArray(payload)) {
-      recommendations.value = payload
-      recommendMessage.value = ''
-    } else {
-      console.warn('[MyPage] unexpected recommendation response shape:', payload)
-      recommendations.value = []
-      recommendMessage.value = ''
-    }
-  } catch (error) {
-    console.error('[MyPage] failed to load recommendations:', error)
-    recommendError.value = '현재 추천 강의를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
-  } finally {
-    recommendLoading.value = false
-  }
-}
-
-async function loadInstructorCourses() {
-  try {
-    if (!auth.user) {
-      console.warn('[MyPage] instructor auth.user is missing')
-      instructorError.value = '강좌 정보를 불러오지 못했습니다.'
-      return
-    }
-
-    if (!auth.user.id) {
-      console.warn('[MyPage] instructor auth.user.id is missing:', auth.user)
-      instructorError.value = '강좌 정보를 불러오지 못했습니다.'
-      return
-    }
-
-    const res = await courseApi.getCourses()
-    console.log('[MyPage] course list response:', res.data)
-
-    let courses = []
-
-    if (Array.isArray(res.data?.data)) {
-      courses = res.data.data
-    } else if (Array.isArray(res.data)) {
-      courses = res.data
-    } else {
-      console.warn('[MyPage] unexpected course response shape:', res.data)
-    }
-
-    console.log('[MyPage] auth.user =', auth.user)
-    console.log('[MyPage] courses =', courses)
-    console.log('[MyPage] first course =', courses[0])
-
-    courses.forEach(course => {
-      console.log('[MyPage] instructor fields check:', {
-        courseId: course.id,
-        instructorId: course.instructorId,
-        instructor_id: course.instructor_id,
-        instructor: course.instructor,
-        teacherId: course.teacherId,
-        teacher_id: course.teacher_id,
-        rawCourse: course
-      })
-    })
-
-    const instructorId = Number(auth.user.id)
-
-    myCourses.value = courses.filter(course => {
-      const courseInstructorId = Number(getCourseInstructorId(course))
-      return !Number.isNaN(courseInstructorId) && courseInstructorId === instructorId
-    })
-
-    console.log('[MyPage] filtered myCourses =', myCourses.value)
-  } catch (error) {
-    console.error('[MyPage] failed to load instructor courses:', error)
-    instructorError.value = '현재 강좌 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
-  } finally {
-    instructorLoading.value = false
-  }
-}
+const tab = ref('profile')
+const profileName = ref('')
+const profileMessage = ref('')
+const passwordSaved = ref(false)
+const withdrawConfirmed = ref(false)
+const withdrawn = ref(false)
+const currentPassword = ref('')
+const newPassword = ref('')
+const newPasswordConfirm = ref('')
+const user = reactive({ id: null, email: '', name: '', role: '', businessRole: '', companyId: null, status: '', createdAt: '' })
+const terms = reactive([])
+const tabs = [{ id: 'profile', label: '기본 정보', icon: UserRound }, { id: 'security', label: '비밀번호 변경', icon: LockKeyhole }, { id: 'agreements', label: '약관 및 동의', icon: FileCheck2 }, { id: 'withdraw', label: '회원 탈퇴', icon: UserRoundX }]
 
 onMounted(async () => {
-  if (isInstructor.value) {
-    recommendLoading.value = false
-    await loadInstructorCourses()
-  } else {
-    instructorLoading.value = false
-    await loadStudentRecommendations()
+  try {
+    const userData = unwrapApiData(await authApi.getMe())
+    Object.assign(user, userData)
+    profileName.value = user.name
+    const activeTerms = unwrapApiData(await authApi.getActiveTerms())
+    terms.splice(0, terms.length, ...activeTerms.map((term) => ({ ...term, title: term.content, effectiveAt: term.effectiveAt?.slice(0, 10), agreed: term.required })))
+  } catch (error) {
+    profileMessage.value = error.response?.data?.message || '내 정보를 불러오지 못했습니다.'
   }
 })
+
+async function saveProfile() {
+  Object.assign(user, unwrapApiData(await authApi.updateMe(profileName.value)))
+  profileMessage.value = '이름이 저장되었습니다.'
+}
+
+async function savePassword() {
+  if (newPassword.value !== newPasswordConfirm.value) return
+  await authApi.changePassword(currentPassword.value, newPassword.value)
+  passwordSaved.value = true
+}
+
+async function withdrawMe() {
+  await authApi.withdrawMe()
+  withdrawn.value = true
+}
 </script>
 
 <style scoped>
-.page-wrapper {
-  min-height: 100vh;
-  background: var(--color-bg-secondary);
-}
-
-.page-layout {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 32px 24px;
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 28px;
-}
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sidebar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-
-.sidebar-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted);
-  padding: 8px 12px 4px;
-}
-
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  transition: var(--transition);
-  background: none;
-  border: none;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  font-family: var(--font-sans);
-  text-decoration: none;
-}
-
-.sidebar-item:hover {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-}
-
-.sidebar-item.active {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-weight: 500;
-}
-
-.si-icon {
-  font-size: 15px;
-}
-
-.main-content {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-
-.profile-card {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 28px;
-  box-shadow: var(--shadow-sm);
-}
-
-.profile-avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  font-size: 24px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.profile-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.profile-name {
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.profile-email {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.badge-blue {
-  background: #e8f1ff;
-  color: #2563eb;
-}
-
-.badge-amber {
-  background: #f7edd8;
-  color: #9a6700;
-}
-
-.section-head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.section-subtitle {
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.recommend-message {
-  margin-bottom: 14px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-
-.recommend-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.loading-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.instructor-loading {
-  margin-bottom: 20px;
-}
-
-.skeleton-card {
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-}
-
-.skeleton-thumb {
-  height: 110px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-
-.skeleton-body {
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.skeleton-line {
-  height: 12px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-
-.skeleton-line.short {
-  width: 40%;
-}
-
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(160px, 220px));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.summary-card {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 18px 20px;
-  box-shadow: var(--shadow-sm);
-}
-
-.summary-label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 8px;
-}
-
-.summary-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.instructor-course-list {
-  display: grid;
-  gap: 18px;
-}
-
-.instructor-course-card {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 22px;
-  box-shadow: var(--shadow-sm);
-}
-
-.course-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.course-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.course-desc {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
-  white-space: pre-line;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.status-active {
-  background: #eaf8ef;
-  color: #0f8a3b;
-}
-
-.status-inactive {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.course-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.meta-box {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
-  padding: 14px;
-}
-
-.meta-label {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 6px;
-}
-
-.meta-value {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.course-card-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  border-radius: var(--radius-md);
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: var(--transition);
-}
-
-.action-primary {
-  background: var(--color-primary);
-  color: white;
-}
-
-.action-primary:hover {
-  opacity: 0.92;
-}
-
-.empty-text {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
-
-@keyframes shimmer {
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@media (max-width: 992px) {
-  .page-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .recommend-grid,
-  .loading-row,
-  .course-meta-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .summary-cards {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .profile-card {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .course-card-top {
-    flex-direction: column;
-  }
-
-  .summary-cards {
-    grid-template-columns: 1fr;
-  }
-}
+.profile-layout{display:grid;grid-template-columns:230px 1fr;gap:16px}.profile-nav{height:max-content;padding:14px}.identity{display:flex;align-items:center;gap:10px;padding:10px 7px 20px;margin-bottom:8px;border-bottom:1px solid var(--line)}.identity .avatar{width:42px;height:42px}.identity strong,.identity small{display:block}.identity strong{font-size:12px}.identity small{margin-top:2px;color:var(--muted);font-size:8px}.profile-nav button{width:100%;display:flex;align-items:center;gap:9px;padding:11px;color:var(--muted);background:transparent;border-radius:9px;font-size:10px;font-weight:700;text-align:left}.profile-nav button.active{color:var(--forest);background:var(--mint)}.profile-panel{min-height:550px;padding:30px}.section-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:26px}.section-title h2{font-size:19px}.section-title p{margin-top:5px;color:var(--muted);font-size:9px}.profile-panel form{max-width:680px}.narrow{max-width:520px!important}.field small{color:var(--muted);font-size:8px}.account-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.account-grid div{padding:14px;background:var(--surface-2);border-radius:10px}.account-grid small,.account-grid strong{display:block}.account-grid small{margin-bottom:4px;color:var(--muted);font-size:8px}.account-grid strong{font-size:10px}.message{display:flex;align-items:center;gap:6px;color:var(--forest-2);font-size:9px}.term-list{border:1px solid var(--line);border-radius:13px}.term-list label{display:flex;align-items:center;gap:11px;padding:16px;border-bottom:1px solid var(--line)}.term-list label:last-child{border-bottom:0}.term-list label>span:nth-child(2){flex:1}.term-list strong,.term-list small{display:block}.term-list strong{font-size:10px}.term-list small{margin-top:4px;color:var(--muted);font-size:8px}.contract-help{display:flex;align-items:center;gap:7px;margin-top:15px;color:var(--muted);font-size:9px}.contract-help code{color:var(--forest-2)}.danger-zone{max-width:620px;padding:26px;color:var(--danger);background:var(--danger-soft);border-radius:16px}.danger-zone>span{width:50px;height:50px;display:grid;place-items:center;background:white;border-radius:14px}.danger-zone h2{margin:17px 0 8px;font-size:19px}.danger-zone>p{color:#825852;font-size:10px;line-height:1.7}.confirm{display:flex;gap:8px;margin:20px 0;color:#825852;font-size:9px}.danger-zone .button:disabled{opacity:.4}.withdraw-result{display:flex;gap:7px;margin-top:14px;font-size:9px}@media(max-width:760px){.profile-layout{grid-template-columns:1fr}.profile-nav{display:flex;overflow-x:auto}.identity{display:none}.profile-nav button{width:auto;white-space:nowrap}.account-grid{grid-template-columns:1fr}.profile-panel{padding:22px}}
 </style>

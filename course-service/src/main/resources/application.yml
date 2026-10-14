@@ -38,7 +38,11 @@ eureka:
 # 서비스 간 통신 설정
 service:
   user-service:
-    url: http://user-service
+    url: ${SERVICE_USER_SERVICE_URL:http://user-service:8081}
+
+app:
+  security:
+    internal-api-key: ${INTERNAL_API_KEY:local-internal-api-key}
 
 springdoc:
   api-docs:

@@ -1,8 +1,8 @@
 package com.lecture.user.dto;
 
 import com.lecture.user.entity.User;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,26 +13,6 @@ import java.time.LocalDateTime;
 
 public class UserDto {
 
-    // 회원가입 요청
-    @Getter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class RegisterRequest {
-        @NotBlank(message = "이메일은 필수입니다")
-        @Email(message = "올바른 이메일 형식이 아닙니다")
-        private String email;
-
-        @NotBlank(message = "비밀번호는 필수입니다")
-        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다")
-        private String password;
-
-        @NotBlank(message = "이름은 필수입니다")
-        private String name;
-
-        private User.Role role; // STUDENT or INSTRUCTOR
-    }
-
     // 사용자 정보 응답
     @Getter
     @NoArgsConstructor
@@ -42,7 +22,10 @@ public class UserDto {
         private Long id;
         private String email;
         private String name;
-        private User.Role role;
+        private User.AuthRole role;
+        private User.BusinessRole businessRole;
+        private Long companyId;
+        private User.Status status;
         private LocalDateTime createdAt;
 
         public static UserResponse from(User user) {
@@ -51,34 +34,53 @@ public class UserDto {
                     .email(user.getEmail())
                     .name(user.getName())
                     .role(user.getRole())
+                    .businessRole(user.getBusinessRole())
+                    .companyId(user.getCompany() == null ? null : user.getCompany().getId())
+                    .status(user.getStatus())
                     .createdAt(user.getCreatedAt())
                     .build();
         }
     }
 
-    // 공통 API 응답 래퍼
+    @Getter
+    @AllArgsConstructor
+    public static class AuthorizationContextResponse {
+        private Long userId;
+        private Long companyId;
+        private User.BusinessRole businessRole;
+        private User.Status status;
+
+        public static AuthorizationContextResponse from(User user) {
+            return new AuthorizationContextResponse(
+                    user.getId(),
+                    user.getCompany() == null ? null : user.getCompany().getId(),
+                    user.getBusinessRole(),
+                    user.getStatus()
+            );
+        }
+    }
+
     @Getter
     @NoArgsConstructor
     @AllArgsConstructor
-    @Builder
-    public static class ApiResponse<T> {
-        private boolean success;
-        private String message;
-        private T data;
-
-        public static <T> ApiResponse<T> success(T data) {
-            return ApiResponse.<T>builder()
-                    .success(true)
-                    .message("성공")
-                    .data(data)
-                    .build();
-        }
-
-        public static <T> ApiResponse<T> error(String message) {
-            return ApiResponse.<T>builder()
-                    .success(false)
-                    .message(message)
-                    .build();
-        }
+    public static class UpdateRequest {
+        @NotBlank(message = "이름은 필수입니다")
+        @Size(max = 100, message = "이름은 100자 이하여야 합니다")
+        private String name;
     }
+
+    @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AgreementRequest {
+        @NotEmpty(message = "약관 동의는 필수입니다")
+        private java.util.List<@jakarta.validation.constraints.NotNull(message = "약관 ID는 필수입니다") Long> agreementIds;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class AgreementResponse {
+        private java.util.List<Long> agreedTermIds;
+    }
+
 }

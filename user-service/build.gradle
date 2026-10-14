@@ -24,6 +24,8 @@ ext {
 dependencies {
     // Web
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
 
     // Spring Security + OAuth2 Resource Server
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -39,6 +41,9 @@ dependencies {
     // Validation
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    // Kafka
+    implementation 'org.springframework.kafka:spring-kafka'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -49,6 +54,8 @@ dependencies {
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 dependencyManagement {

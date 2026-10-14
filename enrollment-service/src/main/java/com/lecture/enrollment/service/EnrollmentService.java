@@ -2,6 +2,8 @@ package com.lecture.enrollment.service;
 
 import com.lecture.enrollment.dto.EnrollmentDto;
 import com.lecture.enrollment.entity.Enrollment;
+import com.lecture.enrollment.exception.EnrollmentException;
+import com.lecture.enrollment.exception.ErrorCode;
 import com.lecture.enrollment.kafka.EnrollmentKafkaProducer;
 import com.lecture.enrollment.kafka.KafkaEvent;
 import com.lecture.enrollment.repository.EnrollmentRepository;
@@ -10,10 +12,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import com.lecture.enrollment.entity.LessonProgress;
+import com.lecture.enrollment.repository.LessonProgressRepository;
+import com.lecture.enrollment.service.CourseServiceClient.LessonInfo;
 
 @Slf4j
 @Service
@@ -23,152 +30,175 @@ public class EnrollmentService {
 
     private final EnrollmentRepository enrollmentRepository;
     private final CourseServiceClient courseServiceClient;
-    private final PaymentServiceClient paymentServiceClient;
-    private final EnrollmentKafkaProducer kafkaProducer;
+    private final UserAuthorizationClient userAuthorizationClient;
+    private final CompanyEntitlementClient companyEntitlementClient;
+    private final EnrollmentKafkaProducer enrollmentKafkaProducer;
     private final EnrollmentWriteService enrollmentWriteService;
+    private final LessonProgressRepository lessonProgressRepository;
+    private final ProgressCalculator progressCalculator;
 
-    /**
-     * 수강신청 전체 흐름
-     * 1. 강의 존재 확인
-     * 2. 중복 수강 확인
-     * 3. Enrollment 생성 및 즉시 커밋 (PENDING)
-     * 4. 결제 요청
-     */
-    public EnrollmentDto.EnrollmentResponse enroll(Long userId, Long courseId) {
-        if (!courseServiceClient.existsCourse(courseId)) {
-            throw new IllegalArgumentException("존재하지 않는 강의입니다: " + courseId);
+    @Transactional
+    public EnrollmentDto.EnrollResponse enroll(Long userId, Long courseId) {
+        UserAuthorizationClient.AuthorizationContext authorization =
+                userAuthorizationClient.getAuthorizationContext(userId);
+
+        if (!authorization.isActiveEmployee()) {
+            throw new EnrollmentException(ErrorCode.FORBIDDEN);
         }
+
+        CompanyEntitlementClient.Entitlement entitlement =
+                companyEntitlementClient.getEntitlement(authorization.getCompanyId());
+
+        if (!entitlement.isActive()) {
+            throw new EnrollmentException(ErrorCode.SUBSCRIPTION_INACTIVE);
+        }
+
+        courseServiceClient.validateEnrollable(courseId);
 
         if (enrollmentRepository.existsByUserIdAndCourseId(userId, courseId)) {
-            throw new IllegalArgumentException("이미 수강신청한 강의입니다");
+            throw new EnrollmentException(ErrorCode.DUPLICATE_ENROLLMENT);
         }
 
-        Enrollment enrollment = enrollmentWriteService.createPendingEnrollment(userId, courseId);
-
-        paymentServiceClient.requestPayment(userId, courseId, BigDecimal.valueOf(99000));
-
-        log.info("[EnrollmentService] 수강신청 완료 (결제 대기) - enrollmentId: {}", enrollment.getId());
-        return EnrollmentDto.EnrollmentResponse.from(enrollment);
-    }
-
-    /**
-     * 수강 활성화
-     */
-    @Transactional
-    public void activateEnrollment(Long userId, Long courseId) {
-        Enrollment enrollment = enrollmentRepository.findByUserIdAndCourseId(userId, courseId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "수강 정보를 찾을 수 없습니다 - userId: " + userId + ", courseId: " + courseId));
-
-        enrollment.activate();
-
-        courseServiceClient.increaseEnrollmentCount(courseId);
-
-        kafkaProducer.publishEnrollmentCompleted(
-                KafkaEvent.EnrollmentCompletedEvent.builder()
-                        .enrollmentId(enrollment.getId())
-                        .userId(userId)
-                        .courseId(courseId)
-                        .build()
+        Enrollment enrollment = enrollmentWriteService.createEnrollment(
+                authorization.getCompanyId(),
+                userId,
+                courseId
         );
 
-        log.info("[EnrollmentService] 수강 활성화 완료 - enrollmentId: {}", enrollment.getId());
+        log.info("[EnrollmentService] 수강신청 완료 - enrollmentId: {}", enrollment.getId());
+        return EnrollmentDto.EnrollResponse.from(enrollment);
     }
 
-    /**
-     * 사용자 수강 목록 조회
-     * - course-service에서 강의 상세 정보를 붙여서 반환
-     */
-    public List<EnrollmentDto.EnrollmentResponse> getEnrollmentsByUser(Long userId) {
-        List<Enrollment> enrollments = enrollmentRepository.findByUserId(userId);
-
-        return enrollments.stream()
-                .map(enrollment -> {
-                    Map<String, Object> courseInfo = courseServiceClient.getCourse(enrollment.getCourseId());
-
-                    EnrollmentDto.CourseSummary courseSummary = EnrollmentDto.CourseSummary.builder()
-                            .id(toLong(courseInfo.get("id")))
-                            .title((String) courseInfo.get("title"))
-                            .description((String) courseInfo.get("description"))
-                            .category(normalizeCategory((String) courseInfo.get("category")))
-                            .price(toInteger(courseInfo.get("price")))
-                            .thumbnail((String) courseInfo.get("thumbnail"))
-                            .instructorName(
-                                    firstNonNull(
-                                            (String) courseInfo.get("instructorName"),
-                                            (String) courseInfo.get("teacherName"),
-                                            (String) courseInfo.get("instructor_name")
-                                    )
-                            )
-                            .enrollmentCount(toInteger(
-                                    firstNonNullObject(
-                                            courseInfo.get("enrollmentCount"),
-                                            courseInfo.get("enrollment_count")
-                                    )
-                            ))
-                            .build();
-
-                    return EnrollmentDto.EnrollmentResponse.from(enrollment, courseSummary);
-                })
-                .collect(Collectors.toList());
+    public List<EnrollmentDto.EnrollmentSummaryResponse> getEnrollmentsByUser(Long userId) {
+        requireActiveEmployee(userId);
+        return enrollmentRepository.findByUserIdOrderByEnrolledAtDesc(userId)
+                .stream()
+                .map(EnrollmentDto.EnrollmentSummaryResponse::from)
+                .toList();
     }
 
-    /**
-     * 수강 이력 조회 - 추천 서비스용
-     */
+    public EnrollmentDto.EnrollmentDetailResponse getEnrollmentDetail(Long userId, Long enrollmentId) {
+        Enrollment enrollment = findActiveEmployeeEnrollment(userId, enrollmentId);
+        return EnrollmentDto.EnrollmentDetailResponse.from(enrollment,
+                lessonProgressRepository.findByEnrollment_IdOrderByLessonIdAsc(enrollmentId));
+    }
+
+    @Transactional
+    public EnrollmentDto.LessonActionResponse startLesson(Long userId, Long enrollmentId, Long lessonId) {
+        Enrollment enrollment = findActiveEmployeeEnrollment(userId, enrollmentId);
+        LessonProgress progress = findOrCreateLessonProgress(enrollment, lessonId);
+        progress.start(java.time.LocalDateTime.now());
+        enrollment.startLearning(java.time.LocalDateTime.now());
+        updateProgress(enrollment);
+        return EnrollmentDto.LessonActionResponse.from(enrollment, progress);
+    }
+
+    @Transactional
+    public EnrollmentDto.LessonActionResponse completeLesson(Long userId, Long enrollmentId, Long lessonId) {
+        Enrollment enrollment = findActiveEmployeeEnrollment(userId, enrollmentId);
+        boolean wasCompleted = enrollment.getStatus() == Enrollment.Status.COMPLETED;
+        LessonProgress progress = findOrCreateLessonProgress(enrollment, lessonId);
+        progress.complete(java.time.LocalDateTime.now());
+        updateProgress(enrollment);
+        if (!wasCompleted && enrollment.getStatus() == Enrollment.Status.COMPLETED) {
+            enrollmentKafkaProducer.publishEnrollmentCompleted(
+                    KafkaEvent.EnrollmentCompletedEvent.builder()
+                            .eventId(java.util.UUID.randomUUID().toString())
+                            .eventType("EnrollmentCompleted")
+                            .occurredAt(java.time.LocalDateTime.now())
+                            .enrollmentId(enrollment.getId())
+                            .userId(enrollment.getUserId())
+                            .courseId(enrollment.getCourseId())
+                            .build()
+            );
+        }
+        return EnrollmentDto.LessonActionResponse.from(enrollment, progress);
+    }
+
+    public EnrollmentDto.PageResponse<EnrollmentDto.ManagementEnrollmentResponse> getCompanyEnrollments(
+            Long adminId, int page, int size) {
+        UserAuthorizationClient.AuthorizationContext authorization = userAuthorizationClient.getAuthorizationContext(adminId);
+        if (!authorization.isActiveCompanyAdmin()) {
+            throw new EnrollmentException(ErrorCode.FORBIDDEN);
+        }
+        return managementPage(authorization.getCompanyId(), page, size);
+    }
+
+    public EnrollmentDto.PageResponse<EnrollmentDto.ManagementEnrollmentResponse> getAllForPlatformAdmin(
+            Long adminId, int page, int size) {
+        UserAuthorizationClient.AuthorizationContext authorization = userAuthorizationClient.getAuthorizationContext(adminId);
+        if (!authorization.isActivePlatformAdmin()) {
+            throw new EnrollmentException(ErrorCode.FORBIDDEN);
+        }
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+        return EnrollmentDto.PageResponse.from(enrollmentRepository.findAll(pageable)
+                .map(EnrollmentDto.ManagementEnrollmentResponse::from));
+    }
+
+    private EnrollmentDto.PageResponse<EnrollmentDto.ManagementEnrollmentResponse> managementPage(
+            Long companyId, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+        Page<EnrollmentDto.ManagementEnrollmentResponse> result = enrollmentRepository.findByCompanyId(companyId, pageable)
+                .map(EnrollmentDto.ManagementEnrollmentResponse::from);
+        return EnrollmentDto.PageResponse.from(result);
+    }
+
+    private void requireActiveEmployee(Long userId) {
+        if (!userAuthorizationClient.getAuthorizationContext(userId).isActiveEmployee()) {
+            throw new EnrollmentException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    private Enrollment findActiveEmployeeEnrollment(Long userId, Long enrollmentId) {
+        UserAuthorizationClient.AuthorizationContext authorization = userAuthorizationClient.getAuthorizationContext(userId);
+        if (!authorization.isActiveEmployee()) {
+            throw new EnrollmentException(ErrorCode.FORBIDDEN);
+        }
+        return enrollmentRepository.findByIdAndUserIdAndCompanyId(enrollmentId, userId, authorization.getCompanyId())
+                .orElseThrow(() -> new EnrollmentException(ErrorCode.ENROLLMENT_NOT_FOUND));
+    }
+
+    private LessonProgress findOrCreateLessonProgress(Enrollment enrollment, Long lessonId) {
+        List<LessonInfo> lessons = courseServiceClient.getLessons(enrollment.getCourseId());
+        boolean lessonInCourse = lessons.stream().anyMatch(lesson -> lesson.lessonId().equals(lessonId));
+        if (!lessonInCourse) {
+            throw new EnrollmentException(ErrorCode.LESSON_NOT_IN_COURSE);
+        }
+        return lessonProgressRepository.findByEnrollment_IdAndLessonId(enrollment.getId(), lessonId)
+                .orElseGet(() -> lessonProgressRepository.save(LessonProgress.create(enrollment, lessonId)));
+    }
+
+    private void updateProgress(Enrollment enrollment) {
+        List<LessonInfo> lessons = courseServiceClient.getLessons(enrollment.getCourseId());
+        Set<Long> requiredLessonIds = lessons.stream().filter(LessonInfo::required)
+                .map(LessonInfo::lessonId).collect(Collectors.toSet());
+        long completed = requiredLessonIds.isEmpty() ? 0 : lessonProgressRepository
+                .countByEnrollment_IdAndLessonIdInAndStatus(enrollment.getId(), requiredLessonIds, LessonProgress.Status.COMPLETED);
+        enrollment.updateProgress(progressCalculator.calculate(completed, requiredLessonIds.size()));
+        if (progressCalculator.isCompleted(completed, requiredLessonIds.size())) {
+            enrollment.complete(java.time.LocalDateTime.now());
+        } else if (enrollment.getStatus() == Enrollment.Status.ENROLLED) {
+            enrollment.startLearning(java.time.LocalDateTime.now());
+        }
+    }
+
     public EnrollmentDto.EnrollmentHistoryResponse getEnrollmentHistory(Long userId) {
         List<Long> activeCourseIds = enrollmentRepository
-                .findByUserIdAndStatus(userId, Enrollment.Status.ACTIVE)
+                .findByUserIdAndStatusIn(
+                        userId,
+                        List.of(
+                                Enrollment.Status.ENROLLED,
+                                Enrollment.Status.LEARNING,
+                                Enrollment.Status.COMPLETED
+                        )
+                )
                 .stream()
                 .map(Enrollment::getCourseId)
-                .collect(Collectors.toList());
+                .toList();
 
         return EnrollmentDto.EnrollmentHistoryResponse.builder()
                 .userId(userId)
                 .activeCourseIds(activeCourseIds)
                 .build();
-    }
-
-    private String normalizeCategory(String category) {
-        if (category == null) return null;
-
-        return switch (category) {
-            case "BACKEND" -> "백엔드";
-            case "FRONTEND" -> "프론트엔드";
-            case "DEVOPS" -> "DevOps";
-            case "DATA" -> "데이터";
-            case "AI" -> "AI";
-            default -> category;
-        };
-    }
-
-    private Long toLong(Object value) {
-        if (value == null) return null;
-        if (value instanceof Number number) return number.longValue();
-        return Long.parseLong(value.toString());
-    }
-
-    private Integer toInteger(Object value) {
-        if (value == null) return null;
-        if (value instanceof Number number) return number.intValue();
-        return Integer.parseInt(value.toString());
-    }
-
-    private String firstNonNull(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private Object firstNonNullObject(Object... values) {
-        for (Object value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
     }
 }

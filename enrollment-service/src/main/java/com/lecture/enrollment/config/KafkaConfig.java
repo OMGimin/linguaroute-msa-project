@@ -9,19 +9,8 @@ import org.springframework.kafka.config.TopicBuilder;
 @Configuration
 public class KafkaConfig {
 
-    @Value("${kafka.topic.payment-completed}")
-    private String paymentCompletedTopic;
-
     @Value("${kafka.topic.enrollment-completed}")
     private String enrollmentCompletedTopic;
-
-    @Bean
-    public NewTopic paymentCompletedTopic() {
-        return TopicBuilder.name(paymentCompletedTopic)
-                .partitions(3)
-                .replicas(1)
-                .build();
-    }
 
     @Bean
     public NewTopic enrollmentCompletedTopic() {

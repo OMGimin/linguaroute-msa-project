@@ -1,0 +1,53 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:user_service;MODE=MariaDB;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
+          issuer-uri: http://localhost:9000
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: user-service-test
+    listener:
+      auto-startup: false
+
+eureka:
+  client:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+
+app:
+  auth:
+    token-url: http://localhost:9000/oauth2/token
+    web-client-id: web-client
+    web-client-secret: test-secret
+    redirect-uri: http://localhost:3000/callback
+  frontend:
+    base-url: http://localhost:5173
+  security:
+    internal-api-key: local-internal-api-key
+
+kafka:
+  topic:
+    subscription-events: subscription.events
+
+management:
+  health:
+    mail:
+      enabled: false

@@ -47,7 +47,19 @@ eureka:
 # Kafka 토픽명
 kafka:
   topic:
-    payment-completed: payment.completed
+    subscription-events: subscription.events
+
+app:
+  security:
+    internal-api-key: ${INTERNAL_API_KEY:local-internal-api-key}
+  outbox:
+    publish-delay-ms: 5000
+  subscription:
+    maintenance-delay-ms: 60000
+
+service:
+  user-service:
+    url: http://localhost:8081
 
 springdoc:
   api-docs:

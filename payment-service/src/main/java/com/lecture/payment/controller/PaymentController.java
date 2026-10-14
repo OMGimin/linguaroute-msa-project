@@ -1,11 +1,14 @@
 package com.lecture.payment.controller;
 
 import com.lecture.payment.dto.PaymentDto;
+import com.lecture.payment.security.PaymentRequestContext;
 import com.lecture.payment.service.PaymentService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -15,37 +18,12 @@ import java.util.List;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentRequestContext paymentRequestContext;
 
-    /**
-     * POST /payments/internal/request - 내부 결제 요청 (Enrollment Service 호출)
-     */
-    @PostMapping("/internal/request")
-    public ResponseEntity<PaymentDto.InternalPaymentResult> processInternalPayment(
-            @RequestBody PaymentDto.InternalPaymentRequest request) {
-
-        PaymentDto.InternalPaymentResult result = paymentService.processInternalPayment(request);
-        return ResponseEntity.ok(result);
-    }
-
-    /**
-     * GET /payments/{id} - 결제 단건 조회
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<PaymentDto.ApiResponse<PaymentDto.PaymentResponse>> getPayment(
-            @PathVariable Long id) {
-
-        return ResponseEntity.ok(
-                PaymentDto.ApiResponse.success(paymentService.getPayment(id)));
-    }
-
-    /**
-     * GET /payments/user/{userId} - 사용자 결제 내역 조회
-     */
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<PaymentDto.ApiResponse<List<PaymentDto.PaymentResponse>>> getPaymentsByUser(
-            @PathVariable Long userId) {
-
-        return ResponseEntity.ok(
-                PaymentDto.ApiResponse.success(paymentService.getPaymentsByUser(userId)));
+    @GetMapping
+    public ResponseEntity<PaymentDto.ApiResponse<List<PaymentDto.PaymentResponse>>> getPayments(
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader) {
+        Long companyId = paymentRequestContext.companyId(userIdHeader);
+        return ResponseEntity.ok(PaymentDto.ApiResponse.success(paymentService.getPayments(companyId)));
     }
 }

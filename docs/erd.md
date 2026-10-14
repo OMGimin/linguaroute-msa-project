@@ -1,6 +1,6 @@
 # LinguaRoute MSA ERD
 
-> 문서 상태: MVP 논리 설계 초안
+> 문서 상태: 2026-08-11 현재 엔티티·초기 스키마·이벤트 구현 동기화
 
 ## 1. 설계 원칙
 
@@ -18,7 +18,7 @@
 
 ```mermaid
 flowchart LR
-    AUTH_SERVER["Auth Server<br/>OAuth2/JWT"] -. "users 로그인 필드 읽기" .-> USER
+    AUTH_SERVER["Auth Server<br/>Email Login/JWT"] -. "users 로그인 필드 읽기" .-> USER
     COMPANY["Company<br/>user-service"] --> USER["User<br/>user-service"]
     COMPANY --> INVITATION["Invitation<br/>user-service"]
     COMPANY -. "논리 참조" .-> SUBSCRIPTION["Subscription<br/>payment-service"]
@@ -28,9 +28,9 @@ flowchart LR
     COURSE["Course<br/>course-service"] --> LESSON["Lesson<br/>course-service"]
     COURSE -. "논리 참조" .-> ENROLLMENT
     ENROLLMENT --> PROGRESS["Lesson Progress<br/>enrollment-service"]
-    USER -. "논리 참조" .-> RECOMMENDATION["Recommendation<br/>recommend-service"]
-    COURSE -. "ACTIVE 강의 조회" .-> RECOMMENDATION
-    RECOMMENDATION --> RECOMMENDATION_ITEM["Recommendation Item<br/>recommend-service"]
+    USER -. "논리 참조·권한 조회" .-> RECOMMENDATION["Recommendation<br/>recommend-service"]
+    COURSE -. "논리 참조·ACTIVE 후보 조회" .-> RECOMMENDATION_ITEM["Recommendation Item<br/>recommend-service"]
+    RECOMMENDATION --> RECOMMENDATION_ITEM
 ```
 
 점선은 서로 다른 서비스 소유 영역 사이의 논리 참조이며 실제 데이터베이스 외래키를 생성하지 않습니다.
@@ -39,7 +39,7 @@ flowchart LR
 
 ## 3. 기존 Auth Server 호환
 
-Auth Server는 별도의 신규 인증 테이블을 소유하지 않고 공용 `users` 테이블의 `id`, `email`, `password`, `name`, `role`을 읽어 OAuth2 로그인과 Access Token 발급을 수행합니다. Refresh Token은 추가하지 않습니다.
+Auth Server는 별도의 신규 인증 테이블을 소유하지 않고 공용 `users` 테이블의 `id`, `email`, `password`, `name`, `role`을 읽어 자체 이메일·비밀번호 로그인과 OAuth2 Authorization Code 기반 JWT Access Token 발급을 수행합니다. 소셜 로그인은 사용하지 않습니다. Auth Server가 Refresh Token을 반환해도 MVP 프론트엔드는 저장·갱신에 사용하지 않습니다.
 
 제공 JAR의 역할 enum이 `STUDENT`, `INSTRUCTOR`로 고정되어 있으므로 `users.role`은 로그인 호환 필드로 유지합니다. `EMPLOYEE`는 `STUDENT`, `COMPANY_ADMIN`과 `PLATFORM_ADMIN`은 `INSTRUCTOR`로 매핑합니다. LinguaRoute의 실제 권한은 `users.business_role`에 저장하고 각 보호 API가 `user-service`의 사용자 상태·기업 소속과 함께 확인합니다.
 
@@ -99,6 +99,7 @@ erDiagram
         int seat_limit
         boolean auto_renew
         datetime current_period_end
+        datetime created_at
         datetime updated_at
     }
 
@@ -154,20 +155,22 @@ erDiagram
 
 | 테이블 | 제약조건 |
 | --- | --- |
-| `company` | `business_number` 유일 |
+| `companies` | `business_number` 유일 |
 | `users` | `email` 유일, `password`에는 BCrypt 해시만 저장 |
 | `users.role` | 기존 Auth Server 호환용 `STUDENT`, `INSTRUCTOR`만 저장 |
 | `users.business_role` | 실제 권한 `PLATFORM_ADMIN`, `COMPANY_ADMIN`, `EMPLOYEE` 저장 |
-| `users.company_id` | `PLATFORM_ADMIN`은 `NULL`, 기업 관리자와 직원은 필수 |
-| `invitation` | 원문 코드 대신 `code_hash` 저장 및 유일 처리 |
-| `invitation` | `UNUSED` 상태이고 만료 전일 때만 사용 가능 |
-| `company_entitlement` | 기업별 1개, 결제 이벤트의 최신 구독 권한을 조회용으로 저장 |
-| `processed_event` | `event_id` 유일로 Kafka 이벤트 중복 처리 방지 |
-| `user_agreement` | `(user_id, term_id)` 유일 |
-| `email_verification` | 코드와 토큰을 해시로 저장하고 만료·일회성 사용 처리 |
-| `password_reset_token` | 토큰을 해시로 저장하고 만료·일회성 사용 처리 |
+| `users.company_id` | `PLATFORM_ADMIN`은 `NULL`, 기업 관리자와 활성·비활성 직원은 필수, `RELEASED` 처리된 직원은 `NULL` |
+| `invitations` | 원문 코드 대신 `code_hash` 저장 및 유일 처리 |
+| `invitations` | `UNUSED` 상태이고 만료 전일 때만 사용 가능 |
+| `company_entitlements` | 기업별 1개, 결제 이벤트의 최신 구독 권한을 조회용으로 저장 |
+| `processed_events` | `event_id` 유일로 Kafka 이벤트 중복 처리 방지 |
+| `user_agreements` | `(user_id, term_id)` 유일 |
+| `email_verifications` | 코드와 토큰을 해시로 저장하고 만료·일회성 사용 처리 |
+| `password_reset_tokens` | `user_id`, 토큰 SHA-256 해시, 만료·사용 시각을 저장해 15분 만료·일회성 사용 처리 |
 
-`user-service`는 사용자와 비밀번호 해시, 이메일 인증, 아이디 찾기, 비밀번호 변경·재설정을 소유합니다. Auth Server는 로그인 시 같은 `users` 테이블의 호환 필드만 읽습니다. 활성 직원 수가 사용 좌석 수입니다. 구매 좌석 수와 구독 상태의 원본은 `payment-service`가 소유하며, `user-service`는 Kafka 이벤트로 받은 최신 이용 권한을 `company_entitlement`에 저장하여 직원 가입 시 사용합니다. `subscription_id`는 `payment-service`에 대한 논리 참조입니다. 구독 해지 시 `auto_renew`만 `false`로 바꾸고 `current_period_end`까지 `entitlement_status=ACTIVE`를 유지합니다.
+`user-service`는 사용자와 비밀번호 해시, 이메일 인증, 아이디 찾기, 비밀번호 변경·재설정을 소유합니다. Auth Server는 로그인 시 같은 `users` 테이블의 호환 필드만 읽습니다. 활성 직원 수가 사용 좌석 수입니다. 구매 좌석 수와 구독 상태의 원본은 `payment-service`가 소유하며, `user-service`는 최신 이용 권한을 `company_entitlements`에 저장하여 직원 가입과 수강신청 권한 조회에 사용합니다. `subscription_id`는 `payment-service`에 대한 논리 참조입니다. 구독 해지 시 `auto_renew`만 `false`로 바꾸고 `current_period_end`까지 `entitlement_status=ACTIVE`를 유지합니다.
+
+현재 구현은 `invitations` 테이블의 초대코드 SHA-256 해시 저장, 초대 생성·목록·폐기·재발급, 초대 기반 직원 가입의 단회 사용·만료·구독·좌석 검증을 포함합니다. 사용 좌석은 별도 테이블이 아니라 같은 기업의 `ACTIVE` 직원 수로 계산하며, 직원 비활성화·소속 해제는 즉시 좌석을 회수합니다. 재활성화는 `company_entitlements` 잠금 조회 후 잔여 좌석을 다시 검증합니다. 또한 `company_entitlements` 테이블, `/internal/companies/{companyId}/entitlement` 조회 API, `subscription.events` Kafka 소비와 `processed_events` 기반 중복 처리를 포함합니다.
 
 ---
 
@@ -194,11 +197,9 @@ erDiagram
         bigint course_id FK
         varchar title
         text content_url
-        int sequence
+        int sequence_no
         boolean required
         int duration_seconds
-        datetime created_at
-        datetime updated_at
     }
 
 ```
@@ -207,10 +208,10 @@ erDiagram
 
 | 테이블 | 제약조건 |
 | --- | --- |
-| `course` | 상태는 `ACTIVE`, `INACTIVE`만 사용 |
-| `lesson` | `(course_id, sequence)` 유일 |
+| `courses` | 상태는 `ACTIVE`, `INACTIVE`만 사용 |
+| `lessons` | `(course_id, sequence_no)` 유일 |
 
-강의 등록·수정·활성·비활성 상태 관리는 확정 MVP입니다. 별도의 게시·비게시 상태는 두지 않고 `ACTIVE`, `INACTIVE`로 통합합니다.
+실제 물리 테이블은 `courses`, `lessons`입니다. `lessons`는 현재 생성·수정 시각 컬럼을 저장하지 않습니다. 강의 등록·수정·활성·비활성 상태 관리는 확정 MVP입니다. 별도의 게시·비게시 상태는 두지 않고 `ACTIVE`, `INACTIVE`로 통합합니다.
 
 ---
 
@@ -218,7 +219,7 @@ erDiagram
 
 ```mermaid
 erDiagram
-    RECOMMENDATION ||--|{ RECOMMENDATION_ITEM : contains
+    RECOMMENDATION ||--o{ RECOMMENDATION_ITEM : contains
 
     RECOMMENDATION {
         bigint id PK
@@ -248,10 +249,24 @@ erDiagram
 
 | 테이블 | 제약조건 |
 | --- | --- |
-| `recommendation_item` | `(recommendation_id, course_id)` 유일 |
-| 추천 결과 | `ACTIVE` 강의와 요청 언어가 일치하는 강의만 저장 |
+| `recommendations` | 요청 사용자·기업·언어·수준·직무·상황·목표와 최종 출처·상태 저장 |
+| `recommendation_items` | `(recommendation_id, course_id)` 유일, 같은 추천 안에서 강의 중복 방지 |
+| `recommendation_items.recommendation_id` | 같은 서비스 소유 FK, 추천 삭제 시 항목 `ON DELETE CASCADE` |
+| `user_id`, `company_id`, `course_id` | 다른 서비스 소유 ID이므로 실제 FK 없이 논리 참조로 저장 |
+| 추천 결과 | 최대 3개, `ACTIVE` 상태·요청 언어 일치·기존 수강 제외 후 저장 |
 
-`recommendation.user_id`와 `company_id`는 `user-service`, `recommendation_item.course_id`는 `course-service`에 대한 논리 참조입니다. `recommend-service`는 다른 서비스의 테이블을 직접 조회하지 않고 `course-service` API로 추천 후보와 상태를 검증합니다.
+`recommend-service`는 `recommendations`와 `recommendation_items`를 소유합니다. 두 테이블은 `init-db/01_init.sql`에 명시되어 있고 SQLAlchemy Entity와 동일한 컬럼·제약조건을 사용합니다. 응답의 `recommendationId`는 `recommendations.id`의 영속 기본키입니다.
+
+```text
+직원 요청
+→ user-service 내부 API로 최신 역할·소속·상태 확인
+→ enrollment-service 내부 API로 기존 수강 강의 ID 조회
+→ course-service 내부 API로 같은 언어의 ACTIVE 후보 조회
+→ OpenAI 또는 로컬 Provider가 후보 안에서 최대 3개와 이유 생성
+→ recommend-service가 후보 ID·중복·언어·상태 재검증
+→ 실패 시 규칙 기반 fallback으로 전환
+→ recommendations와 recommendation_items 저장 후 응답
+```
 
 ---
 
@@ -308,14 +323,16 @@ erDiagram
 
 ## 8. payment-service ERD
 
+`payment-service`의 실제 물리 테이블명은 JPA 구현 기준으로 복수형을 사용합니다. 논리 엔티티는 `Plan`, `PlanPrice`, `Subscription`, `Payment`, `OutboxEvent`입니다.
+
 ```mermaid
 erDiagram
-    PLAN ||--|{ PLAN_PRICE : priced_as
-    PLAN_PRICE ||--o{ SUBSCRIPTION : selected_by
-    SUBSCRIPTION ||--o{ PAYMENT : paid_by
-    SUBSCRIPTION ||--o{ OUTBOX_EVENT : emits
+    PLANS ||--|{ PLAN_PRICES : priced_as
+    PLAN_PRICES ||--o{ SUBSCRIPTIONS : selected_by
+    SUBSCRIPTIONS ||--o{ PAYMENTS : paid_by
+    SUBSCRIPTIONS ||--o{ OUTBOX_EVENTS : emits
 
-    PLAN {
+    PLANS {
         bigint id PK
         varchar name
         varchar description
@@ -323,7 +340,7 @@ erDiagram
         datetime created_at
     }
 
-    PLAN_PRICE {
+    PLAN_PRICES {
         bigint id PK
         bigint plan_id FK
         varchar billing_cycle
@@ -334,11 +351,12 @@ erDiagram
         datetime created_at
     }
 
-    SUBSCRIPTION {
+    SUBSCRIPTIONS {
         bigint id PK
         bigint company_id
         bigint plan_price_id FK
         varchar status
+        boolean auto_renew
         datetime current_period_start
         datetime current_period_end
         datetime next_billing_at
@@ -347,11 +365,11 @@ erDiagram
         datetime updated_at
     }
 
-    PAYMENT {
+    PAYMENTS {
         bigint id PK
         bigint subscription_id FK
         bigint company_id
-        varchar idempotency_key UK
+        varchar idempotency_key
         bigint amount
         varchar currency
         varchar status
@@ -362,7 +380,7 @@ erDiagram
         datetime failed_at
     }
 
-    OUTBOX_EVENT {
+    OUTBOX_EVENTS {
         bigint id PK
         varchar event_id UK
         varchar aggregate_type
@@ -380,13 +398,14 @@ erDiagram
 
 | 테이블 | 제약조건 |
 | --- | --- |
-| `plan_price` | `(plan_id, billing_cycle)` 유일 |
-| `subscription` | 기업별 활성 구독은 최대 1개 |
-| `payment` | `idempotency_key` 유일로 중복 결제 방지 |
-| `payment` | 금액은 요청값이 아니라 `plan_price`에서 서버가 결정 |
-| `outbox_event` | 결제·구독 상태 변경과 같은 트랜잭션으로 저장하고 `event_id` 유일 처리 |
+| `plan_prices` | `(plan_id, billing_cycle)` 유일 |
+| `subscriptions` | 기업별 활성 구독은 최대 1개 |
+| `subscriptions.auto_renew` | 해지 시 `false`로 변경하고 현재 이용 기간까지 `ACTIVE` 유지 |
+| `payments` | `(company_id, idempotency_key)` 유일로 기업별 중복 결제 방지 |
+| `payments` | 금액은 요청값이 아니라 `plan_prices.price`에서 서버가 결정 |
+| `outbox_events` | 결제·구독 상태 변경과 같은 트랜잭션으로 저장하고 `event_id` 유일 처리 |
 
-`subscription.company_id`와 `payment.company_id`는 `user-service`에 대한 논리 참조입니다.
+`subscriptions.company_id`와 `payments.company_id`는 `user-service`에 대한 논리 참조입니다. `payment-service`는 클라이언트가 보낸 회사 식별값을 신뢰하지 않고, Gateway가 전달한 인증 사용자 ID로 `user-service` 내부 권한 조회 API를 호출해 활성 `COMPANY_ADMIN`의 `companyId`를 확인한 뒤 저장합니다. `payment-service`는 `user-service` 소유 테이블을 직접 조회하지 않습니다.
 
 ---
 
@@ -443,7 +462,7 @@ erDiagram
 
 ## 11. Kafka 이벤트
 
-이벤트 발행자는 `payment-service`, 이용 권한 소비자는 `user-service`입니다. 모든 이벤트는 `eventId`를 가지며 소비자는 `processed_event.event_id`로 중복 처리를 방지합니다.
+구독 이벤트의 발행자는 `payment-service`, 이용 권한 소비자는 `user-service`입니다. 모든 구독 이벤트는 `eventId`를 가지며 소비자는 `processed_event.event_id`로 중복 처리를 방지합니다. `payment-service`는 상태 변경과 같은 트랜잭션에서 `outbox_events`에 이벤트를 저장하고, 단일 Kafka 토픽 `subscription.events`로 발행합니다. 이벤트 key는 `companyId`입니다.
 
 ### 11.1 PaymentCompleted
 
@@ -532,7 +551,24 @@ erDiagram
 
 `user-service`는 `entitlement_status=ACTIVE`, `auto_renew=true`, 좌석 한도와 새 이용 기간을 반영합니다.
 
-### 11.6 처리 흐름
+### 11.6 EnrollmentCompleted
+
+`enrollment-service`는 수강신청 생성 시점이 아니라 모든 필수 차시가 완료되어 `Enrollment.status=COMPLETED`로 전환될 때만 `enrollment.completed` 토픽에 아래 이벤트를 발행합니다.
+
+```json
+{
+  "eventId": "c149229f-c428-4bf9-bb1a-b97431c4f8b5",
+  "eventType": "EnrollmentCompleted",
+  "occurredAt": "2026-08-11T10:45:00",
+  "enrollmentId": 9001,
+  "userId": 101,
+  "courseId": 9101
+}
+```
+
+현재 `recommend-service`는 이 이벤트를 수신해 로그로 기록하며 기존 추천 이력을 갱신하지 않습니다. 추천 요청 시점마다 `course-service`와 `enrollment-service` 내부 조회 API에서 최신 기준 데이터를 가져오고 새 추천 요청·결과를 저장합니다.
+
+### 11.7 구독 이벤트 처리 흐름
 
 ```text
 payment-service가 상태 변경과 같은 트랜잭션에서 Outbox 이벤트 저장
@@ -557,6 +593,7 @@ MVP에서는 미발행 Outbox 이벤트를 5초 간격으로 재시도하고 성
 | 초대코드 | 폐기 시 `REVOKED`, 만료 시 `EXPIRED` 사용 |
 | 수강 이력 | 학습 기록 보존을 위해 물리 삭제하지 않음 |
 | 결제 | 회계 및 감사 목적으로 삭제하지 않음 |
+| 추천 이력 | MVP에서는 삭제 API를 제공하지 않으며, 같은 서비스 안에서 추천을 삭제할 경우 항목은 cascade 삭제 |
 | 감사 로그 | 추후 구현 시 수정·삭제하지 않는 append-only 방식 사용 |
 
 ---
@@ -570,3 +607,4 @@ MVP에서는 미발행 Outbox 이벤트를 5초 간격으로 재시도하고 성
 | 서비스 경계 | 다른 서비스 소유 테이블 직접 조회·조인과 서비스 사이 외래키가 없는지 확인 |
 | 논리 참조 | 서비스 밖의 ID가 논리 참조로만 저장되는지 확인 |
 | 이벤트 전달 보장 | Outbox를 5초 간격으로 재시도하고 `processed_event`는 프로젝트 기간 동안 보관 |
+| 추천 데이터 | `recommendations`, `recommendation_items`가 초기 DDL·SQLAlchemy Entity와 일치하고 `recommendationId`가 영속 PK인지 확인 |

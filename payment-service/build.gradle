@@ -24,6 +24,7 @@ ext {
 dependencies {
     // Web
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // Spring Security + OAuth2 Resource Server
     implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -53,6 +54,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 dependencyManagement {

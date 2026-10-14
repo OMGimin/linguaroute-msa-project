@@ -1,0 +1,29 @@
+-- 기존 MariaDB 볼륨에서도 제공 Auth Server의 users INSERT가 동작하도록
+-- user-service 확장 컬럼을 데이터 보존 방식으로 보정한다.
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS business_role VARCHAR(30) NULL
+        COMMENT 'PLATFORM_ADMIN | COMPANY_ADMIN | EMPLOYEE';
+
+UPDATE users
+SET business_role = CASE
+    WHEN role = 'INSTRUCTOR' THEN 'COMPANY_ADMIN'
+    ELSE 'EMPLOYEE'
+END
+WHERE business_role IS NULL OR business_role = '';
+
+ALTER TABLE users
+    MODIFY COLUMN business_role VARCHAR(30) NOT NULL DEFAULT 'EMPLOYEE'
+        COMMENT 'PLATFORM_ADMIN | COMPANY_ADMIN | EMPLOYEE';
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NULL
+        COMMENT 'ACTIVE | INACTIVE | WITHDRAWN';
+
+UPDATE users
+SET status = 'ACTIVE'
+WHERE status IS NULL OR status = '';
+
+ALTER TABLE users
+    MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+        COMMENT 'ACTIVE | INACTIVE | WITHDRAWN';

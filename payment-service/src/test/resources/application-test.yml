@@ -1,0 +1,32 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:payment_test;MODE=MariaDB;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  cloud:
+    discovery:
+      enabled: false
+  kafka:
+    bootstrap-servers: localhost:9092
+
+eureka:
+  client:
+    enabled: false
+
+kafka:
+  topic:
+    subscription-events: subscription.events
+
+app:
+  outbox:
+    publish-delay-ms: 3600000
+  subscription:
+    maintenance-delay-ms: 3600000

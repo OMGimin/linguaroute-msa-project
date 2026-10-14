@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '@/store/auth.js'
 
 const api = axios.create({
-  baseURL: '',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' }
 })
@@ -19,13 +19,16 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      console.error('[API] 401 Unauthorized')
-      console.error('[API] response data =', err.response?.data)
-      console.error('[API] request url =', err.config?.url)
-      // 디버깅 중에는 자동 로그아웃/리다이렉트 잠시 비활성화
-      // const auth = useAuthStore()
-      // auth.logout()
-      // window.location.href = '/login'
+      const auth = useAuthStore()
+      auth.logout(false)
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login?reason=session-expired')
+      }
+    }
+    if (err.response?.status === 403 && err.response?.data?.code === 'USER_INACTIVE') {
+      const auth = useAuthStore()
+      auth.logout(false)
+      window.location.assign('/login?reason=user-inactive')
     }
     return Promise.reject(err)
   }

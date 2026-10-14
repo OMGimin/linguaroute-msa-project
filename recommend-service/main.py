@@ -3,6 +3,8 @@ import py_eureka_client.eureka_client as eureka_client
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.config.settings import settings
+from app.config.database import create_tables
+from app.model import entities  # noqa: F401 - 테이블 메타데이터 등록
 from app.kafka.consumer import enrollment_consumer
 from app.router import recommend_router
 
@@ -19,6 +21,12 @@ async def lifespan(app: FastAPI):
 
     # 시작 시
     logger.info(f"[{settings.app_name}] 서비스 시작")
+
+    try:
+        create_tables()
+        logger.info("[Database] 추천 테이블 준비 완료")
+    except Exception as e:
+        logger.warning(f"[Database] 초기화 실패: {e}")
 
     # Eureka 등록
     try:

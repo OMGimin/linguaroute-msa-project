@@ -62,15 +62,18 @@ eureka:
 # 서비스 간 통신 URL (Eureka lb:// 사용 대신 컨테이너 DNS 직접 호출)
 service:
   course-service:
-    url: http://course-service:8082
-  payment-service:
-    url: http://payment-service:8084
+    url: ${SERVICE_COURSE_SERVICE_URL:http://course-service:8082}
+  user-service:
+    url: ${SERVICE_USER_SERVICE_URL:http://user-service:8081}
 
 # Kafka 토픽명
 kafka:
   topic:
-    payment-completed: payment.completed
     enrollment-completed: enrollment.completed
+
+app:
+  security:
+    internal-api-key: ${INTERNAL_API_KEY:local-internal-api-key}
 
 springdoc:
   api-docs:
